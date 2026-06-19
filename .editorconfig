@@ -1,0 +1,24 @@
+# https://editorconfig.org
+# One source of truth for whitespace across Go + TS + docs.
+root = true
+
+[*]
+charset                  = utf-8
+end_of_line              = lf
+insert_final_newline     = true
+trim_trailing_whitespace = true
+indent_style             = space
+indent_size              = 2
+
+# Go uses tabs; gofmt enforces this and will fight any other setting.
+[*.go]
+indent_style = tab
+indent_size  = 4
+
+# Makefiles still want literal tabs (even though we use devenv tasks).
+[Makefile]
+indent_style = tab
+
+# Markdown should keep trailing spaces (line breaks).
+[*.md]
+trim_trailing_whitespace = false

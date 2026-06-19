@@ -1,0 +1,22 @@
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+
+# harness runtime state (SQLite DBs + WAL/SHM sidecars)
+/.cirius-harness/state/
+
+# AI assets
+.agents
+.opencode
+.claude
+.codegraph
+.gemini
+.mcp.json
+skills-lock.json
