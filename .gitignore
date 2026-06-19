@@ -3,6 +3,9 @@
 devenv.local.nix
 devenv.local.yaml
 
+# node modules
+node_modules
+
 # direnv
 .direnv
 

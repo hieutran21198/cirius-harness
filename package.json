@@ -1,0 +1,15 @@
+{
+  "name": "@workspace/root",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Root workspace package - hosts nx + shared TS tooling. App / lib deps live in their own package.json.",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {},
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
