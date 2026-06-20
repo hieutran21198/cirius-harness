@@ -33,3 +33,7 @@ skills-lock.json
 # Editor assets
 .vscode
 .idea
+
+# Deployment: never commit filled-in env files; keep the *.example templates
+deploy/**/*.env
+!deploy/**/*.env.example
