@@ -26,8 +26,18 @@ type Worktree struct {
 	Status Status
 }
 
+// New assembles a worktree from an app-minted id and its attributes, active by
+// default, and validates it. The id is supplied by the application/adapter.
+func New(id, path, projectID, branch string) (Worktree, error) {
+	w := Worktree{ID: id, Path: path, ProjectID: projectID, Branch: branch, Status: StatusActive}
+	return w, w.Validate()
+}
+
 // Validate checks the worktree's invariants.
 func (w Worktree) Validate() error {
+	if w.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidWorktree)
+	}
 	if w.Path == "" {
 		return fmt.Errorf("%w: path is required", ErrInvalidWorktree)
 	}

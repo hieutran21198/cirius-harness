@@ -40,8 +40,28 @@ type Agent struct {
 	ToolIDs []string
 }
 
+// New assembles an agent (a team role) from an app-minted id and its attributes,
+// enabled by default, and validates it. The id is supplied by the
+// application/adapter, not generated here.
+func New(id, name string, archetype Archetype, responsibility, description string, source Source, toolIDs []string) (Agent, error) {
+	a := Agent{
+		ID:             id,
+		Name:           name,
+		Responsibility: responsibility,
+		Archetype:      archetype,
+		Description:    description,
+		Source:         source,
+		Enabled:        true,
+		ToolIDs:        toolIDs,
+	}
+	return a, a.Validate()
+}
+
 // Validate checks the agent's invariants.
 func (a Agent) Validate() error {
+	if a.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidAgent)
+	}
 	if a.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidAgent)
 	}

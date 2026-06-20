@@ -38,30 +38,42 @@ type modelWriter struct {
 // base connection or an open transaction.
 func NewModelWriter(db *gorm.DB) model.Writer { return modelWriter{db: db} }
 
-// Exists reports whether a model with the natural key (provider, slug) is present.
-func (w modelWriter) Exists(ctx context.Context, provider, slug string) (bool, error) {
-	var n int64
+// ExistingKeys returns the natural keys ("provider/slug") present in the catalog as a
+// set, for an in-memory membership check before a batch upsert.
+func (w modelWriter) ExistingKeys(ctx context.Context) (map[string]struct{}, error) {
+	var rows []modelRow
 	err := w.db.WithContext(ctx).Model(&modelRow{}).
-		Where("provider = ? AND slug = ?", provider, slug).Count(&n).Error
+		Select("provider", "slug").Find(&rows).Error
 	if err != nil {
-		return false, fmt.Errorf("repo.modelWriter.Exists: %w", err)
+		return nil, fmt.Errorf("repo.modelWriter.ExistingKeys: %w", err)
 	}
-	return n > 0, nil
+	keys := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		keys[r.Provider+"/"+r.Slug] = struct{}{}
+	}
+	return keys, nil
 }
 
-// Save upserts the model on its natural key (provider, slug): an existing row keeps
-// its id and only `enabled` is updated; a new (provider, slug) inserts with the id.
-func (w modelWriter) Save(ctx context.Context, m model.Model) error {
-	if err := m.Validate(); err != nil {
-		return err
+// SaveAll upserts the models on their natural key (provider, slug) in one batch: an
+// existing row keeps its id and only `enabled` is updated; a new (provider, slug)
+// inserts with its id.
+func (w modelWriter) SaveAll(ctx context.Context, ms []model.Model) error {
+	if len(ms) == 0 {
+		return nil
 	}
-	row := toRow(m)
+	rows := make([]modelRow, 0, len(ms))
+	for _, m := range ms {
+		if err := m.Validate(); err != nil {
+			return err
+		}
+		rows = append(rows, toRow(m))
+	}
 	err := w.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "provider"}, {Name: "slug"}},
 		DoUpdates: clause.AssignmentColumns([]string{"enabled"}),
-	}).Create(&row).Error
+	}).Create(&rows).Error
 	if err != nil {
-		return fmt.Errorf("repo.modelWriter.Save: %w", err)
+		return fmt.Errorf("repo.modelWriter.SaveAll: %w", err)
 	}
 	return nil
 }

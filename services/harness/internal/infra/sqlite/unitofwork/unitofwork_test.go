@@ -44,8 +44,12 @@ func TestDoTxCommits(t *testing.T) {
 	ctx := context.Background()
 	uow := unitofwork.New(newDB(t))
 
-	err := uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
-		return tx.Models().Save(ctx, model.Model{ID: "1", Provider: "openai", Slug: "gpt-5.5", Enabled: true})
+	m1, err := model.New("1", "openai", "gpt-5.5")
+	if err != nil {
+		t.Fatalf("model.New: %v", err)
+	}
+	err = uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
+		return tx.Models().SaveAll(ctx, []model.Model{m1})
 	})
 	if err != nil {
 		t.Fatalf("DoTx: %v", err)
@@ -60,8 +64,12 @@ func TestDoTxRollsBackOnError(t *testing.T) {
 	uow := unitofwork.New(newDB(t))
 	boom := errors.New("boom")
 
-	err := uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
-		if err := tx.Models().Save(ctx, model.Model{ID: "1", Provider: "openai", Slug: "gpt-5.5", Enabled: true}); err != nil {
+	m1, err := model.New("1", "openai", "gpt-5.5")
+	if err != nil {
+		t.Fatalf("model.New: %v", err)
+	}
+	err = uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
+		if err := tx.Models().SaveAll(ctx, []model.Model{m1}); err != nil {
 			return err
 		}
 		return boom // abort → the save above must roll back

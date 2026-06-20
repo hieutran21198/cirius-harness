@@ -41,6 +41,22 @@ type Session struct {
 	Members []Member
 }
 
+// New assembles a new run of the harness from an app-minted id, scoped to a
+// project, pending and not yet provisioned (EnvUnset), and validates it. The id and
+// createdAt are supplied by the application/adapter (no clock in the domain);
+// Members are added by later use cases.
+func New(id, projectID, title string, createdAt time.Time) (Session, error) {
+	s := Session{
+		ID:        id,
+		ProjectID: projectID,
+		EnvType:   EnvUnset,
+		Title:     title,
+		Status:    StatusPending,
+		CreatedAt: createdAt,
+	}
+	return s, s.Validate()
+}
+
 // Validate checks the session's invariants, including those of its members.
 func (s Session) Validate() error {
 	if s.ID == "" {

@@ -46,8 +46,18 @@ type Tool struct {
 	Description string
 }
 
+// New assembles a tool catalog entry from an app-minted id and its attributes and
+// validates it. The id is supplied by the application/adapter.
+func New(id string, name Name, description string) (Tool, error) {
+	t := Tool{ID: id, Name: name, Description: description}
+	return t, t.Validate()
+}
+
 // Validate checks the tool's invariants.
 func (t Tool) Validate() error {
+	if t.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidTool)
+	}
 	if !t.Name.Valid() {
 		return fmt.Errorf("%w: unknown name %q", ErrInvalidTool, t.Name)
 	}

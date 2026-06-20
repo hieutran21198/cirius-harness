@@ -46,8 +46,18 @@ type Container struct {
 	Status Status
 }
 
+// New assembles a container from an app-minted id and its attributes, pending by
+// default, and validates it. The id is supplied by the application/adapter.
+func New(id, projectID, image string) (Container, error) {
+	c := Container{ID: id, ProjectID: projectID, Image: image, Status: StatusPending}
+	return c, c.Validate()
+}
+
 // Validate checks the container's invariants.
 func (c Container) Validate() error {
+	if c.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidContainer)
+	}
 	if c.ProjectID == "" {
 		return fmt.Errorf("%w: project id is required", ErrInvalidContainer)
 	}

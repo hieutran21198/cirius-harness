@@ -27,7 +27,7 @@ internal/
 │                           #   TS client half: apps/pi-harness-extension (ADR-0010).
 └── infra/                  # driven adapters implementing the app's driven ports
     ├── sqlite/             #   GORM persistence, layered:
-    │   ├── repo/           #     Reader/Writer impls (model.Writer; Save upserts on (provider,slug))
+    │   ├── repo/           #     Reader/Writer impls (model.Writer; SaveAll upserts on (provider,slug))
     │   ├── unitofwork/     #     composes repo writers → command.UnitOfWork (DoTx)
     │   └── readstore/      #     composes repo readers → query.ReadStore (with the first query)
     └── casbin/             #   Casbin authorizer (concrete Decide); model.conf + casbinx.
@@ -36,9 +36,13 @@ migrations/                  # seed system agents + policies — future
 
 ## Persistence & authz
 
+- **Aggregates are constructed via a validating `New(...)` factory** (e.g. `model.New`,
+  `session.New`) that applies creation defaults and validates; `Validate()` enforces a
+  non-empty surrogate `ID`. The app mints the id (and stamps the clock) and passes it into
+  `New` — it never sets domain fields directly ([conventions/go.md](../../docs/conventions/go.md)).
 - **Store**: SQLite via `packages/go/gormdb`, at `.cirius-harness/state/harness.sqlite`.
 - **Persistence is CQRS (ADR-0013)**: per-aggregate `Reader`/`Writer` interfaces live in the
-  **domain** (first: `model.Writer` — Exists/Save/Count). Commands mutate through
+  **domain** (first: `model.Writer` — ExistingKeys/SaveAll/Count). Commands mutate through
   `command.UnitOfWork` (`DoTx` = one GORM transaction), implemented by `infra/sqlite/unitofwork`
   composing `infra/sqlite/repo` (the GORM Reader/Writer impls). The read side
   (`query.ReadStore` + domain `Reader`s, → `infra/sqlite/readstore`) is **deferred**. Other

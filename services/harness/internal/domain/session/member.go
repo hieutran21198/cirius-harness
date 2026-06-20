@@ -15,8 +15,19 @@ type Member struct {
 	ModelID string
 }
 
+// NewMember assembles a session member from an app-minted id, the participating
+// agent, and the model it ran with (empty for a model-less agent), and validates
+// it. The id is supplied by the application/adapter.
+func NewMember(id, agentID, modelID string) (Member, error) {
+	m := Member{ID: id, AgentID: agentID, ModelID: modelID}
+	return m, m.Validate()
+}
+
 // Validate checks the member's invariants.
 func (m Member) Validate() error {
+	if m.ID == "" {
+		return fmt.Errorf("%w: member id is required", ErrInvalidSession)
+	}
 	if m.AgentID == "" {
 		return fmt.Errorf("%w: member agent id is required", ErrInvalidSession)
 	}

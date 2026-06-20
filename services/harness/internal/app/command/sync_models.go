@@ -46,41 +46,44 @@ func NewSyncModelsHandler(uow UnitOfWork, logger *slog.Logger) SyncModelsHandler
 
 // Handle upserts the reported models into the catalog cumulatively (ADR-0011):
 // reported (provider, slug) refs absent from the catalog are inserted with a freshly
-// minted UUID v7 (enabled); nothing is deleted. The whole sync runs in one
-// transaction (ADR-0013); it returns how many were newly added and the catalog
-// total afterwards.
+// minted UUID v7 (enabled); nothing is deleted. It reads the present keys once, then
+// batch-inserts the new ones — the whole sync runs in one transaction (ADR-0013).
+// It returns how many were newly added and the catalog total afterwards.
 func (h syncModelsHandler) Handle(ctx context.Context, cmd SyncModels) (SyncModelsResult, error) {
 	var res SyncModelsResult
 	err := h.uow.DoTx(ctx, func(ctx context.Context, tx TransactionalUnitOfWork) error {
 		models := tx.Models()
-		added := 0
-		for _, m := range cmd.Reported {
-			m.Enabled = true
-			if err := m.Validate(); err != nil {
-				return err
+		seen, err := models.ExistingKeys(ctx)
+		if err != nil {
+			return fmt.Errorf("load model keys: %w", err)
+		}
+		newModels := make([]model.Model, 0, len(cmd.Reported))
+		for _, r := range cmd.Reported {
+			key := r.Ref()
+			if _, ok := seen[key]; ok {
+				continue // already in the catalog, or earlier in this batch
 			}
-			exists, err := models.Exists(ctx, m.Provider, m.Slug)
-			if err != nil {
-				return fmt.Errorf("check model %s: %w", m.Ref(), err)
-			}
-			if exists {
-				continue // already in the cumulative catalog
-			}
+			seen[key] = struct{}{} // dedup duplicates within the reported list
 			id, err := uuid.NewV7()
 			if err != nil {
 				return fmt.Errorf("mint model id: %w", err)
 			}
-			m.ID = id.String()
-			if err := models.Save(ctx, m); err != nil {
-				return fmt.Errorf("save model %s: %w", m.Ref(), err)
+			m, err := model.New(id.String(), r.Provider, r.Slug)
+			if err != nil {
+				return err
 			}
-			added++
+			newModels = append(newModels, m)
+		}
+		if len(newModels) > 0 {
+			if err := models.SaveAll(ctx, newModels); err != nil {
+				return fmt.Errorf("save models: %w", err)
+			}
 		}
 		total, err := models.Count(ctx)
 		if err != nil {
 			return fmt.Errorf("count models: %w", err)
 		}
-		res = SyncModelsResult{Added: added, Total: total}
+		res = SyncModelsResult{Added: len(newModels), Total: total}
 		return nil
 	})
 	if err != nil {

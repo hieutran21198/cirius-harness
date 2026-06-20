@@ -6,8 +6,9 @@
 package app
 
 import (
-	"harness-workspace/services/harness/internal/app/command"
 	"log/slog"
+
+	"harness-workspace/services/harness/internal/app/command"
 )
 
 // Application is the use-case entrypoint: the set of command and query handlers.

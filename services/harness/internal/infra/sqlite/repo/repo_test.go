@@ -38,25 +38,35 @@ func newDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestModelWriterSaveExistsCount(t *testing.T) {
+func TestModelWriterSaveAllExistingKeysCount(t *testing.T) {
 	ctx := context.Background()
 	w := repo.NewModelWriter(newDB(t))
 
-	if err := w.Save(ctx, model.Model{ID: "1", Provider: "openai", Slug: "gpt-5.5", Enabled: true}); err != nil {
-		t.Fatalf("Save: %v", err)
+	m1, err := model.New("1", "openai", "gpt-5.5")
+	if err != nil {
+		t.Fatalf("model.New: %v", err)
 	}
-	exists, err := w.Exists(ctx, "openai", "gpt-5.5")
-	if err != nil || !exists {
-		t.Fatalf("Exists(present) = %v, %v; want true, nil", exists, err)
+	if err := w.SaveAll(ctx, []model.Model{m1}); err != nil {
+		t.Fatalf("SaveAll: %v", err)
 	}
-	missing, err := w.Exists(ctx, "anthropic", "claude-opus-4-8")
-	if err != nil || missing {
-		t.Fatalf("Exists(absent) = %v, %v; want false, nil", missing, err)
+	keys, err := w.ExistingKeys(ctx)
+	if err != nil {
+		t.Fatalf("ExistingKeys: %v", err)
+	}
+	if _, ok := keys["openai/gpt-5.5"]; !ok {
+		t.Fatalf("ExistingKeys = %v; want it to contain openai/gpt-5.5", keys)
+	}
+	if _, ok := keys["anthropic/claude-opus-4-8"]; ok {
+		t.Fatalf("ExistingKeys = %v; should not contain an unsaved ref", keys)
 	}
 
 	// Re-save the same (provider, slug) with a different id → upsert, not a new row.
-	if err := w.Save(ctx, model.Model{ID: "2", Provider: "openai", Slug: "gpt-5.5", Enabled: true}); err != nil {
-		t.Fatalf("re-Save: %v", err)
+	m2, err := model.New("2", "openai", "gpt-5.5")
+	if err != nil {
+		t.Fatalf("model.New: %v", err)
+	}
+	if err := w.SaveAll(ctx, []model.Model{m2}); err != nil {
+		t.Fatalf("re-SaveAll: %v", err)
 	}
 	n, err := w.Count(ctx)
 	if err != nil {

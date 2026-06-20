@@ -24,11 +24,22 @@ type Model struct {
 	Enabled bool
 }
 
+// New assembles a catalog entry from an app-minted id and its natural key, enabled
+// by default, and validates it. The id (and any clock stamping) is supplied by the
+// application/adapter, not generated here.
+func New(id, provider, slug string) (Model, error) {
+	m := Model{ID: id, Provider: provider, Slug: slug, Enabled: true}
+	return m, m.Validate()
+}
+
 // Ref returns the canonical "provider/slug" reference.
 func (m Model) Ref() string { return m.Provider + "/" + m.Slug }
 
 // Validate checks the model's invariants.
 func (m Model) Validate() error {
+	if m.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidModel)
+	}
 	if m.Provider == "" {
 		return fmt.Errorf("%w: provider is required", ErrInvalidModel)
 	}

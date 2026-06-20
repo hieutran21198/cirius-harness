@@ -11,25 +11,31 @@ import (
 )
 
 // fakeWriter is an in-memory model.Writer keyed by (provider, slug) — mirroring the
-// real catalog's natural key, so Save upserts on Ref() and ids stay stable.
+// real catalog's natural key, so SaveAll upserts on Ref() and ids stay stable. saves
+// counts the total models passed to SaveAll across calls.
 type fakeWriter struct {
 	byRef map[string]model.Model
 	saves int
 }
 
-func (w *fakeWriter) Exists(_ context.Context, provider, slug string) (bool, error) {
-	_, ok := w.byRef[provider+"/"+slug]
-	return ok, nil
+func (w *fakeWriter) ExistingKeys(_ context.Context) (map[string]struct{}, error) {
+	keys := make(map[string]struct{}, len(w.byRef))
+	for ref := range w.byRef {
+		keys[ref] = struct{}{}
+	}
+	return keys, nil
 }
 
-func (w *fakeWriter) Save(_ context.Context, m model.Model) error {
-	w.saves++
-	if existing, ok := w.byRef[m.Ref()]; ok {
-		existing.Enabled = m.Enabled
-		w.byRef[m.Ref()] = existing
-		return nil
+func (w *fakeWriter) SaveAll(_ context.Context, ms []model.Model) error {
+	for _, m := range ms {
+		w.saves++
+		if existing, ok := w.byRef[m.Ref()]; ok {
+			existing.Enabled = m.Enabled
+			w.byRef[m.Ref()] = existing
+			continue
+		}
+		w.byRef[m.Ref()] = m
 	}
-	w.byRef[m.Ref()] = m
 	return nil
 }
 

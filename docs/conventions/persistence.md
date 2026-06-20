@@ -15,10 +15,12 @@ Data, repository, and migration rules for every Go service that stores state. De
   Commands obtain `Writer`s from a **`UnitOfWork`** (in `app/command`); queries obtain `Reader`s
   from a **`ReadStore`** (in `app/query`). GORM implementations live under `internal/infra`.
   Dependencies point inward — `domain`/`app` never import `infra`.
-- **One `Writer` (and, when a query needs it, `Reader`) per aggregate.** A `Writer.Save` carries
+- **One `Writer` (and, when a query needs it, `Reader`) per aggregate.** A `Writer` save carries
   the aggregate's whole graph (e.g. a session writer persists a session and its members
-  together; an agent writer persists an agent and its tool grants). Add a Reader/Writer when a
-  use case needs it, not speculatively.
+  together; an agent writer persists an agent and its tool grants). Methods are sized to the
+  use case — `model.Writer` batches: `SaveAll` upserts many at once, `ExistingKeys` reads the
+  present natural keys for an in-memory membership check before the batch. Add a Reader/Writer
+  when a use case needs it, not speculatively.
 - **Cross-aggregate references are by the UUID id** (a string), not embedded structs and not
   the natural key — e.g. `session.Member.AgentID` and `session.Member.ModelID`,
   `session.Session.ProjectID`, `worktree.Worktree.ProjectID`,
@@ -91,7 +93,8 @@ m, _ := migrate.New(sqlDB, fsys, migrate.DialectSQLite)  // packages/go/migrate
 
 - Natural-key primary keys, or a DB `DEFAULT` / GORM `BeforeCreate` hook that mints ids in
   the persistence layer — generate the UUID v7 in the use case so the caller knows it before
-  the write.
+  the write, and pass it into the aggregate's `New` constructor ([go.md](go.md)), never
+  assign it to a field after the fact.
 - Storing a per-run choice (e.g. the model) on a shared, editable definition row — record it
   on the runtime row that uses it (`session_agents.model_id`), so editing the definition can't
   rewrite history ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).

@@ -26,8 +26,18 @@ type Project struct {
 	Description string
 }
 
+// New assembles a project from an app-minted id and its attributes and validates
+// it. The id is supplied by the application/adapter.
+func New(id, name, rootPath string, kind Kind, description string) (Project, error) {
+	p := Project{ID: id, Name: name, RootPath: rootPath, Kind: kind, Description: description}
+	return p, p.Validate()
+}
+
 // Validate checks the project's invariants.
 func (p Project) Validate() error {
+	if p.ID == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidProject)
+	}
 	if p.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidProject)
 	}
