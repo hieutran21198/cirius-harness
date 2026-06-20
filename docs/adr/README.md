@@ -50,3 +50,6 @@ $EDITOR "docs/adr/${NEXT}-${TITLE}.md"
 - [0002-persistence-and-migrations](0002-persistence-and-migrations.md) - SQLite + GORM (pure-Go) + embedded goose
 - [0003-authorization-casbin-abac](0003-authorization-casbin-abac.md) - Casbin ABAC, policy in the DB
 - [0004-ports-and-adapters-topology](0004-ports-and-adapters-topology.md) - inbound/outbound port & adapter layout
+- [0005-surrogate-uuid-v7-keys](0005-surrogate-uuid-v7-keys.md) - UUID v7 surrogate PK on every aggregate
+- [0006-model-catalog-and-agent-profiles](0006-model-catalog-and-agent-profiles.md) - first-class models + immutable agent profiles (session-pinned) — superseded by 0007
+- [0007-roles-and-per-session-model-binding](0007-roles-and-per-session-model-binding.md) - agents as roles, per-session model binding, tool catalog, polymorphic session environment

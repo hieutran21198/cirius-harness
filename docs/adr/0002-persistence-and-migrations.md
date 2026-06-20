@@ -9,6 +9,14 @@
 > **Refined by [ADR-0004](0004-ports-and-adapters-topology.md):** the repository *ports*
 > described here now live in `internal/port/outbound` (not the domain) and their impls in
 > `internal/adapter/outbound`. The repository pattern and naming are unchanged.
+>
+> **Refined by [ADR-0005](0005-surrogate-uuid-v7-keys.md):** identity is now a UUID v7
+> surrogate PK on **every** aggregate; natural keys (name, path) are UNIQUE attributes, not
+> PKs, and references travel by UUID.
+>
+> **Refined by [ADR-0006](0006-model-catalog-and-agent-profiles.md):** the model is now a
+> first-class `models` catalog, and an agent's model/tools/fallbacks live on an immutable,
+> versioned `agent_profile` (not the agent row); a session pins the profile it ran with.
 
 ## Context
 

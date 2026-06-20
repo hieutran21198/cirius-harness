@@ -1,6 +1,9 @@
-// Package agent is the agent bounded context: the Agent aggregate and the
-// Agents repository port. Permissions are NOT modelled here — authorization is
-// a separate concern backed by Casbin (see internal/domain/authz).
+// Package agent is the agent bounded context: the Agent aggregate (a pure
+// identity/role) and its repository port. An agent carries no model — which model
+// plays the role is bound per session (see internal/domain/session). Tools are a
+// separate catalog (see internal/domain/tool), granted via the agent_tools
+// junction. Permissions are NOT modelled here — authorization is a separate
+// concern backed by Casbin (see internal/domain/authz).
 package agent
 
 import (
@@ -11,13 +14,16 @@ import (
 // ErrInvalidAgent is returned by Validate for a structurally invalid agent.
 var ErrInvalidAgent = errors.New("agent: invalid")
 
-// Agent is the aggregate root describing one member of the harness team. The
-// agent is also the authorization principal: its Name is the Casbin subject.
+// Agent is the aggregate root describing one member of the harness team — a pure
+// identity/role. It carries no model (the model is bound per session) and no
+// fallbacks; its tools are catalog grants in ToolIDs. The agent is also the
+// authorization principal: its Name is the Casbin subject.
 type Agent struct {
-	// Name uniquely identifies the agent and is its natural key.
+	// ID is the surrogate identity (UUID v7), assigned by the application/adapter.
+	ID string
+	// Name is the agent's unique business key and the authorization principal
+	// (the Casbin subject).
 	Name string
-	// Model is the primary "provider/model-id"; empty means model-less (prayer).
-	Model string
 	// Responsibility describes, in free text, what the agent is responsible for.
 	Responsibility string
 	// Archetype is the agent's purpose-level operating style.
@@ -28,14 +34,11 @@ type Agent struct {
 	Source Source
 	// Enabled reports whether the agent is active.
 	Enabled bool
-	// Tools lists the capabilities the agent may use.
-	Tools []Tool
-	// Fallbacks is the ordered list of "provider/model-id" tried after Model.
-	Fallbacks []string
+	// ToolIDs are the ids of the tools granted to this agent (catalog references,
+	// persisted via the agent_tools junction). The model is NOT here — it is bound
+	// per session on session_agents.model_id (see internal/domain/session).
+	ToolIDs []string
 }
-
-// HasModel reports whether the agent has a model (prayer does not).
-func (a Agent) HasModel() bool { return a.Model != "" }
 
 // Validate checks the agent's invariants.
 func (a Agent) Validate() error {
@@ -47,11 +50,6 @@ func (a Agent) Validate() error {
 	}
 	if !a.Archetype.Valid() {
 		return fmt.Errorf("%w: unknown archetype %q", ErrInvalidAgent, a.Archetype)
-	}
-	for _, t := range a.Tools {
-		if !t.Valid() {
-			return fmt.Errorf("%w: unknown tool %q", ErrInvalidAgent, t)
-		}
 	}
 	return nil
 }

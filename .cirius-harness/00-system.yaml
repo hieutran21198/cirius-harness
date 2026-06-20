@@ -1,0 +1,164 @@
+# Think of AI models as developers on a team. Each has a different brain,
+# different personality, different strengths. A model isn't just "smarter" or
+# "dumber." It thinks differently. Give the same instruction to Claude and GPT,
+# and they'll interpret it in fundamentally different ways.
+#
+# How claude and GPT thinking differently:
+# Claude responds to mechanics-driven prompts — detailed checklists, templates,
+# step-by-step procedures. More rules = more compliance. You can write a
+# 1,100-line prompt with nested workflows and Claude will follow every step.
+# Claude Family (communicative, instruction-following):
+# Claude (Fable > Opus > sonnet) > Kimi (k2.7 > k2.6) > GLM (5.2 > 5.1) > Big Pickle (GLM 4.6)
+#
+# GPT (especially 5.2+) responds to principle-driven | autonomous prompts — concise
+# principles, XML structure, explicit decision criteria. More rules = more
+# contradiction surface = more drift. GPT works best when you state the goal
+# and let it figure out the mechanics.
+# GPT Family:
+# GPT (5.5 > 5.4) > Deepseek > MiniMax (strongly discouraged; use for
+# explorer,lib or quick task only; m3 > m2.7 > m2.5)
+version: 1
+
+fallbacks:
+  enabled: true
+  on: ["error", "ratelimit", "budget", "quota"]
+
+agents:
+  # pray - no model, no tools, no work. Just prays everything works fine.
+  #
+  # Spam praying for:
+  # - anything will be good.
+  # - no bug.
+  # - token / money is acceptable.
+  # Intentionally model-less: a no-op agent that does nothing but hope.
+  prayer:
+    model: # model-less - praying needs no model, it burns incenses.
+  # classify / weight / assign - routing task or orchestration.
+  # Strategic planner | orchestrator | communicator | plan gap analyzer
+  #
+  # Council is the developer who knows everyone, goes everywhere, and gets
+  # things done through communication and coordination. Talks to other agents,
+  # understands context across the whole codebase, delegates work
+  # intelligently, and codes well too. But deep, purely technical problems?
+  # He'll struggle a bit.
+  # So: He is a summoner, call another agents to handle the job.
+  # This is why council uses Claude / Kimi / GLM. These models excel at:
+  #  - Following complex, multi-step instructions (Sisyphus's prompt is ~1,100 lines)
+  #  - Maintaining conversation flow across many tool calls
+  #  - Understanding nuanced delegation and orchestration patterns
+  #  - Producing well-structured, communicative output
+  council:
+    # based on what we discovered, there are some acceptable models:
+    # 1. Claude Opus
+    # 2. Kimi 2.7 | 2.6
+    # 3. Codex (I don't recommend, use it as fallback only)
+    # 4. GLM (actually not good enough - I don't recommand, use it as fallback only)
+    model: "anthropic/claude-opus-4-7"
+    permissions:
+      read: allow
+      edit: deny
+      bash: ask
+      webfetch: deny
+      websearch: deny
+    tools: [read, grep, glob, list]
+    fallbacks: ["openai/gpt-5.4"]
+
+  # design - author the detailed, structured implementation plan.
+  #
+  # The dedicated plan maker, split out of council so each agent owns one verb.
+  # Planning is mechanics-heavy, structured, multi-step writing - exactly what the
+  # Claude family does best (instruction-following, checklists, nested workflows).
+  # Reviewer (not planner) owns plan-gap analysis.
+  planner:
+    model: "anthropic/claude-opus-4-7"
+    permissions:
+      read: allow
+      edit: deny
+      bash: ask
+      webfetch: ask
+      websearch: ask
+    tools: [read, grep, glob, list]
+    fallbacks: ["moonshot/kimi-k2.7"]
+
+  # build - deep technical coding; executes the plan. The only agent that may edit.
+  #
+  # GPT-led: deep, purely technical problems (the thing council struggles with) suit
+  # the principle-driven / autonomous GPT family - state the goal, let it figure out
+  # the mechanics. Claude Opus is the fallback executor.
+  implementer:
+    model: "openai/gpt-5.5"
+    permissions:
+      read: allow
+      edit: allow
+      bash: ask
+      webfetch: deny
+      websearch: deny
+    tools: [read, edit, grep, glob, list, bash]
+    fallbacks: ["anthropic/claude-opus-4-8"]
+
+  # gather - investigation and research; the only agent with web access.
+  #
+  # GPT-led: autonomous information-seeking across web + codebase. Gemini is a strong
+  # long-context fallback for synthesis over large sources.
+  researcher:
+    model: "openai/gpt-5.4"
+    permissions:
+      read: allow
+      edit: deny
+      bash: deny
+      webfetch: allow
+      websearch: allow
+    tools: [read, grep, glob, list, webfetch, websearch]
+    fallbacks: ["google/gemini-3-pro"]
+
+  # scan - fast, cheap, high-volume codebase scanning. Read-only.
+  #
+  # MiniMax per the doc: use for explorer / quick tasks only. Cheap and fast for
+  # locating code; not for deep reasoning. Deepseek is the fallback.
+  explorer:
+    model: "minimax/minimax-m3"
+    permissions:
+      read: allow
+      edit: deny
+      bash: deny
+      webfetch: deny
+      websearch: deny
+    tools: [read, grep, glob, list]
+    fallbacks: ["deepseek/deepseek-v3"]
+
+  # critique - code review and plan-gap analysis. Advisory; never edits.
+  #
+  # Claude-led: structured critique against explicit criteria / checklists is a
+  # Claude-family strength. GPT is the fallback for an autonomous second opinion.
+  reviewer:
+    model: "anthropic/claude-sonnet-4-6"
+    permissions:
+      read: allow
+      edit: deny
+      bash: ask
+      webfetch: deny
+      websearch: deny
+    tools: [read, grep, glob, list]
+    fallbacks: ["openai/gpt-5.4"]
+
+  # retain - capture technical debt, summaries, and lessons; persist as knowledge.
+  #
+  # The team's memory. Receives debt flagged by reviewer, shortcuts noted by
+  # implementer, and end-of-task summaries from council; distills them into durable
+  # knowledge that later runs (especially planner / researcher) can pull from. Reads
+  # and writes the knowledge store - knowledge that's only written is half a feature.
+  # Distillation / structured writing is a Claude-family job, but not deep reasoning,
+  # so a lighter tier fits; Kimi is the fallback.
+  # NOTE: distinct from the audit trail (raw events = what happened); scribe owns the
+  # distilled lessons (= what we learned). Needs path-scoped edit (knowledge store
+  # only, never source) - deferred until the harness supports scoped permissions.
+  scribe:
+    model: "anthropic/claude-sonnet-4-6"
+    permissions:
+      read: allow
+      edit: allow # knowledge store only, never source (scoping = deferred)
+      bash: deny
+      webfetch: deny
+      websearch: deny
+    tools: [read, edit, grep, glob, list]
+    fallbacks: ["moonshot/kimi-k2.7"]

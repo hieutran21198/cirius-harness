@@ -1,27 +1,24 @@
 package session
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
-// Member records one agent's participation in a session — the live join between
-// the agent and session domains. Agent is the agent's natural key (its name).
+// Member records one agent's participation in a session — the agent↔session join
+// (session_agents). It carries the model the agent ran with this session, so the
+// run is reproducible regardless of later edits to the agent or model catalog.
 type Member struct {
-	// Agent is the name of the participating agent (its natural key).
-	Agent string
-	// Role is an optional per-session designation (e.g. "lead"); may be empty.
-	Role string
-	// Active reports whether the agent is still part of the session.
-	Active bool
-	// JoinedAt is when the agent joined the session.
-	JoinedAt time.Time
+	// ID is the surrogate identity (UUID v7), assigned by the application/adapter.
+	ID string
+	// AgentID is the id of the participating agent.
+	AgentID string
+	// ModelID is the id of the model the agent ran with; empty for a model-less
+	// agent (prayer).
+	ModelID string
 }
 
 // Validate checks the member's invariants.
 func (m Member) Validate() error {
-	if m.Agent == "" {
-		return fmt.Errorf("%w: member agent is required", ErrInvalidSession)
+	if m.AgentID == "" {
+		return fmt.Errorf("%w: member agent id is required", ErrInvalidSession)
 	}
 	return nil
 }

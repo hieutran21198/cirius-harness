@@ -10,27 +10,46 @@ Every term should map to a real type when one exists. If a term has no code repr
 
 The live counterpart to the declarative agent team — *work actually happening*.
 
-- **Project** — a codebase the harness operates on, keyed by name; a monorepo is a
-  `kind`. Type: `project.Project` (`services/harness/internal/domain/project`).
-- **Worktree** — an isolated git working copy belonging to a project, keyed by its
-  absolute path; concurrent worktrees are the substrate for parallel work. Type:
-  `worktree.Worktree` (`services/harness/internal/domain/worktree`).
-- **Session** — one run of the harness inside a worktree, with a lifecycle
+- **Project** — a codebase the harness operates on; identified by a UUID v7 surrogate, with
+  `name` as its unique business key; a monorepo is a `kind`. Type: `project.Project`
+  (`services/harness/internal/domain/project`).
+- **Worktree** — an isolated git working copy belonging to a project; identified by a UUID v7
+  surrogate, with its absolute `path` as the unique business key; concurrent worktrees are
+  the substrate for parallel work. Type: `worktree.Worktree`
+  (`services/harness/internal/domain/worktree`).
+- **Container** — an execution environment belonging to a project, sibling to a worktree; a
+  session may run in one. Type: `container.Container`
+  (`services/harness/internal/domain/container`).
+- **Environment** — where a session runs: a container, a worktree, or `unset` (not yet
+  provisioned). Modeled on the session as `env_type` + a polymorphic `env_id`
+  ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).
+- **Session** — one run of the harness, scoped to a **project** and executed in an
+  **environment** (container | worktree | unset), with a lifecycle
   (pending → running → completed/failed/cancelled), identified by a UUID v7. Type:
   `session.Session` (`services/harness/internal/domain/session`).
-- **Membership** — the join recording which agents joined a session (and whether
-  they are still active). Type: `session.Member`, persisted in `session_agents`.
+- **Membership** — the join recording which agents joined a session and, per
+  [ADR-0007](../adr/0007-roles-and-per-session-model-binding.md), the **model** that agent ran
+  with (`model_id`, empty for model-less `prayer`). Type: `session.Member`, persisted in
+  `session_agents`.
 
 ## Agent team (declarative)
 
 The team definition — *who can work* — independent of any running session.
 
-- **Agent** — one member of the harness team, keyed by name; the authorization principal.
-  Type: `agent.Agent` (`services/harness/internal/domain/agent`).
+- **Agent** — one member of the harness team and a pure **role**; identified by a UUID v7
+  surrogate, with `name` as its unique business key and the authorization principal (the
+  Casbin subject). It holds **no model** — which model plays the role is bound per session
+  (`session_agents.model_id`); it is granted **tools** from the catalog via `agent_tools`
+  ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). Type: `agent.Agent`
+  (`services/harness/internal/domain/agent`).
+- **Model** — a provider/model-id in the first-class catalog (e.g. `anthropic/claude-opus-4-7`,
+  stored as provider + `slug`), referenced by id from a session membership. Type: `model.Model`
+  (`services/harness/internal/domain/model`).
 - **Archetype** — an agent's purpose-level operating style: `communicator`,
   `principle-driven`, `utility-runner`, or `none` (model-less). Maps to a model family
   (see [research](../research/model-families.md)). Type: `agent.Archetype`.
-- **Tool** — a capability an agent may use (read, grep, edit, bash, …). Type: `agent.Tool`.
+- **Tool** — an entry in the capability catalog (read, grep, edit, bash, …), granted to agents
+  via `agent_tools`. Type: `tool.Tool` (`services/harness/internal/domain/tool`).
 - **Source** — where an agent definition came from: `system` (default) or `user`
   (workspace overlay). Type: `agent.Source`.
 

@@ -1,6 +1,5 @@
 {
   pkgs,
-  lib,
   ...
 }:
 {
@@ -14,18 +13,6 @@
 
   env = {
     WORKSPACE_NAME = "cirius-harness";
-    NIX_LD = "${pkgs.stdenv.cc.bintools.dynamicLinker}";
-    NIX_LD_LIBRARY_PATH = lib.makeLibraryPath (
-      with pkgs;
-      [
-        stdenv.cc.cc
-        zlib
-        openssl
-        sqlite
-        icu
-        libuv
-      ]
-    );
   };
 
   # Tooling shared by every service / package / app. Keep this list small;
@@ -43,7 +30,6 @@
     # general
     jq
     yq-go
-
   ];
 
   languages = {

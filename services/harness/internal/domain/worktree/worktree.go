@@ -14,10 +14,12 @@ var ErrInvalidWorktree = errors.New("worktree: invalid")
 
 // Worktree is the aggregate root describing one isolated git working copy.
 type Worktree struct {
-	// Path is the absolute filesystem path of the worktree and its natural key.
+	// ID is the surrogate identity (UUID v7), assigned by the application/adapter.
+	ID string
+	// Path is the absolute filesystem path of the worktree, its unique business key.
 	Path string
-	// Project is the name of the owning project (its natural key).
-	Project string
+	// ProjectID is the id of the owning project.
+	ProjectID string
 	// Branch is the git branch checked out in this worktree.
 	Branch string
 	// Status reports whether the worktree is active or stale.
@@ -29,8 +31,8 @@ func (w Worktree) Validate() error {
 	if w.Path == "" {
 		return fmt.Errorf("%w: path is required", ErrInvalidWorktree)
 	}
-	if w.Project == "" {
-		return fmt.Errorf("%w: project is required", ErrInvalidWorktree)
+	if w.ProjectID == "" {
+		return fmt.Errorf("%w: project id is required", ErrInvalidWorktree)
 	}
 	if w.Branch == "" {
 		return fmt.Errorf("%w: branch is required", ErrInvalidWorktree)

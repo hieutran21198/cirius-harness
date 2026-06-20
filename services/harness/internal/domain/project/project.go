@@ -14,7 +14,9 @@ var ErrInvalidProject = errors.New("project: invalid")
 
 // Project is the aggregate root describing one codebase the harness operates on.
 type Project struct {
-	// Name uniquely identifies the project and is its natural key.
+	// ID is the surrogate identity (UUID v7), assigned by the application/adapter.
+	ID string
+	// Name is the project's unique business key.
 	Name string
 	// RootPath is the absolute filesystem path of the project root (unique).
 	RootPath string

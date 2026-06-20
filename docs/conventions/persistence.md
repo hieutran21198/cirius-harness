@@ -13,10 +13,16 @@ Data, repository, and migration rules for every Go service that stores state. De
   ([ADR-0004](../adr/0004-ports-and-adapters-topology.md)). Dependencies point inward
   (hexagonal) — `port` imports `domain`, adapters import `port`, never the reverse.
 - **One aggregate repository per domain, named by the plural** of the aggregate: `Agents`,
-  `Sessions`, `Projects`, `Worktrees`. It carries the aggregate's whole graph (e.g.
-  `Sessions.Save` persists a session and its members together).
-- **Cross-aggregate references are by key value** (a string), not embedded structs — e.g.
-  `session.Member.Agent` holds an agent name, `worktree.Worktree.Project` a project name.
+  `Sessions`, `Projects`, `Worktrees`, `Containers`, `Models`, `Tools`. It carries the
+  aggregate's whole graph (e.g. `Sessions.Save` persists a session and its members together;
+  `Agents.Save` persists an agent and its tool grants).
+- **Cross-aggregate references are by the UUID id** (a string), not embedded structs and not
+  the natural key — e.g. `session.Member.AgentID` and `session.Member.ModelID`,
+  `session.Session.ProjectID`, `worktree.Worktree.ProjectID`,
+  `container.Container.ProjectID` ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).
+- **A polymorphic reference** (e.g. `session.Session.EnvID` keyed by `session.Session.EnvType`)
+  has **no foreign key** — the target table varies, so referential integrity is enforced in
+  the domain's `Validate()`, not the schema.
 - **Unit of work is deferred** until a use case needs a transaction spanning two
   repositories; introduce it with that domain, not before.
 
@@ -30,13 +36,23 @@ Data, repository, and migration rules for every Go service that stores state. De
 ## Schema
 
 - **snake_case** table and column names.
-- **Child and join tables** use a composite primary key and a foreign key back to the
-  parent with **`ON DELETE CASCADE`** (e.g. `agent_tools`, `agent_fallbacks`,
-  `session_agents`). Order rows with an explicit `position` column when order matters.
-- **Keys**: use a **natural key** where the identity is stable and addressable — agent
-  name, project name, worktree path. Use a **UUID v7** surrogate where there is no natural
-  key (session id). Generation/clock stamping happens in the application/adapter, not the
-  domain.
+- **Pure junction tables** use a composite primary key and a foreign key back to each parent
+  with **`ON DELETE CASCADE`** (e.g. `agent_tools`). A join that **carries its own attribute**
+  takes a surrogate `id` PK instead, with a `UNIQUE` over the pair (e.g.
+  `session_agents(id, …, UNIQUE(session_id, agent_id))`, which carries `model_id`) — see
+  [ADR-0007](../adr/0007-roles-and-per-session-model-binding.md). Order rows with an explicit
+  `position` column when order matters.
+- **Keys**: every aggregate has a **UUID v7 surrogate** primary key
+  (`id TEXT PRIMARY KEY NOT NULL`), generated in the application/adapter with `uuid.NewV7()`
+  ([ADR-0005](../adr/0005-surrogate-uuid-v7-keys.md)). Natural keys (agent name, project
+  name, worktree path) are `UNIQUE NOT NULL` attributes — the business/lookup key, not the
+  identity. SQLite generates nothing: mint the id before insert. Clock stamping likewise
+  happens in the application/adapter, not the domain.
+- **Per-run config is bound on the run, not the definition.** Rather than versioning a shared
+  definition, record the choice on the runtime row that uses it — e.g. the model an agent ran
+  with lives on `session_agents.model_id`, not on `agents`
+  ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). Editing the definition then
+  cannot rewrite past runs, with no version/`is_current` machinery.
 - **`casbin_rule` is owned by the Casbin gorm-adapter** (AutoMigrate). Never hand-write it
   in a migration.
 
@@ -65,6 +81,12 @@ m, _ := migrate.New(sqlDB, fsys, migrate.DialectSQLite)  // packages/go/migrate
 
 ## Anti-patterns
 
+- Natural-key primary keys, or a DB `DEFAULT` / GORM `BeforeCreate` hook that mints ids in
+  the persistence layer — generate the UUID v7 in the use case so the caller knows it before
+  the write.
+- Storing a per-run choice (e.g. the model) on a shared, editable definition row — record it
+  on the runtime row that uses it (`session_agents.model_id`), so editing the definition can't
+  rewrite history ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).
 - GORM tags or imports inside `internal/domain`.
 - Permission/authorization columns on a domain table — authz is Casbin
   ([ADR-0003](../adr/0003-authorization-casbin-abac.md)).
