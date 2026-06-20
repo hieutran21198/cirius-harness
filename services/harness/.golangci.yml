@@ -5,8 +5,34 @@ run:
 
 linters:
   default: standard
+  enable:
+    - errorlint # %w wrapping + errors.Is/As — enforces go.md "Errors"
+    - revive # exported doc-comments, error/context naming — go.md "Style"/"Errors"
+    - gocritic # broad diagnostic/style/perf checks (default stable set)
+    - unconvert # redundant type conversions
+    - unparam # unused function params/results
+    - bodyclose # unclosed HTTP response bodies
+    - misspell # spelling in comments/strings
+    - nakedret # naked returns in long funcs
+    - wastedassign # assignments never read
+    - copyloopvar # redundant loop-var copies (Go 1.22+)
+  exclusions:
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # ctx stays named even when unused (go.md: ctx is always the first param);
+      # revive's unused-parameter would force renaming it to _, against convention.
+      - linters: [revive]
+        text: 'unused-parameter'
+      - path: _test\.go
+        linters: [unparam]
 
 formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - harness-workspace
