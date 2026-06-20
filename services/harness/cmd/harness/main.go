@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,7 +21,11 @@ import (
 	"harness-workspace/packages/go/gormdb"
 	"harness-workspace/packages/go/gormdb/sqlite"
 	"harness-workspace/packages/go/migrate"
-	"harness-workspace/services/harness/internal/adapter/inbound/pilink"
+	"harness-workspace/services/harness/internal/app"
+	"harness-workspace/services/harness/internal/app/command"
+	"harness-workspace/services/harness/internal/delivery/pilink"
+	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/infra/sqlite/unitofwork"
 	"harness-workspace/services/harness/migrations"
 )
 
@@ -74,16 +79,28 @@ func serve(dbPath string) error {
 	if err != nil {
 		return err
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	m, err := migrate.New(sqlDB, migrations.FS, migrate.DialectSQLite)
 	if err != nil {
 		return err
 	}
+	// Apply migrations on start so the per-session child is self-sufficient: the
+	// schema must exist before models can be synced (ADR-0008 spirit — the harness
+	// lifecycle is bound to the session, with nothing to run out of band).
+	if err := m.Up(ctx); err != nil {
+		return fmt.Errorf("apply migrations: %w", err)
+	}
+	version, err := m.Version(ctx)
+	if err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
 
-	h := &handler{dbPath: dbPath, migrator: m}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	application := app.New(unitofwork.New(db), logger)
+	h := &handler{dbPath: dbPath, migrator: m, app: application}
 
-	fmt.Fprintf(os.Stderr, "harness serve: ready (db=%s, pid=%d)\n", dbPath, os.Getpid())
+	fmt.Fprintf(os.Stderr, "harness serve: ready (db=%s, schema=v%d, pid=%d)\n", dbPath, version, os.Getpid())
 	if err := pilink.Serve(ctx, os.Stdin, os.Stdout, h); err != nil {
 		// Context cancellation (signal) is a clean shutdown, not a failure.
 		if ctx.Err() != nil {
@@ -100,6 +117,7 @@ func serve(dbPath string) error {
 type handler struct {
 	dbPath   string
 	migrator *migrate.Migrator
+	app      app.Application
 }
 
 func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
@@ -112,4 +130,22 @@ func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyR
 		DBPath:        h.dbPath,
 		PID:           os.Getpid(),
 	}, nil
+}
+
+// SyncModels adapts the wire frame to the SyncModels command: it translates the
+// reported refs into domain models, drives the application handler, and maps the
+// result back to the wire. No business logic lives here (ADR-0004, ADR-0012).
+func (h *handler) SyncModels(ctx context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
+	reported := make([]model.Model, len(req.Models))
+	for i, ref := range req.Models {
+		reported[i] = model.Model{Provider: ref.Provider, Slug: ref.Slug}
+	}
+	res, err := h.app.Commands.SyncModels.Handle(ctx, command.SyncModels{Reported: reported})
+	if err != nil {
+		return pilink.ModelsSyncedResp{}, err
+	}
+	if req.Client != "" {
+		fmt.Fprintf(os.Stderr, "harness: synced models from %s (added=%d, total=%d)\n", req.Client, res.Added, res.Total)
+	}
+	return pilink.ModelsSyncedResp{Added: res.Added, Total: res.Total}, nil
 }

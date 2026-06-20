@@ -22,7 +22,7 @@ packages that persist them.
 
 ## Design
 
-### Two domains (hexagonal; pure domain, ports in `internal/port/outbound`)
+### Two domains (pure domain + per-aggregate Reader/Writer; UnitOfWork/ReadStore — [ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
 
 **agent** — the declarative team, as **roles** bound to models at session time
 ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)):
@@ -31,17 +31,18 @@ packages that persist them.
   — a pure **role**; it carries **no model** and no fallbacks. `ToolIDs` are grants into the
   tool catalog (persisted via `agent_tools`). Typed-string enums `Archetype`
   (communicator | principle-driven | utility-runner | none) and `Source` (system | user).
-  Repository port `outbound.Agents`.
+  (`agent.Reader`/`Writer` added when a use case needs it.)
 - `Tool` aggregate (ID, Name, Description) — the capability **catalog**
   (read | grep | glob | list | edit | bash | webfetch | websearch), `tool.Tool`
-  (`internal/domain/tool`). Repository port `outbound.Tools`.
+  (`internal/domain/tool`). (`tool.Reader`/`Writer` added when a use case needs it.)
 - `Model` aggregate (ID, Provider, Slug, Enabled) — the first-class catalog of available
   provider/model-ids (`Slug` is the provider's model name), `model.Model`
-  (`internal/domain/model`). Repository port `outbound.Models`. Which model an agent uses is
-  bound **per session** (see `Member.ModelID`), not stored on the agent.
+  (`internal/domain/model`). Persisted via `model.Writer` through `command.UnitOfWork` →
+  `infra/sqlite/{unitofwork,repo}`. Which model an agent uses is bound **per session** (see `Member.ModelID`),
+  not stored on the agent.
 
 Permissions are **not** here — authorization is Casbin
-([ADR-0003](../adr/0003-authorization-casbin-abac.md)), with `outbound.Authorizer` returning
+([ADR-0003](../adr/0003-authorization-casbin-abac.md)); the `infra/casbin` authorizer returns
 `authz.Decision` (allow | ask | deny) for an `authz.Action`; the principal stays the agent
 **name**.
 
@@ -166,13 +167,20 @@ There is no production history yet, so the initial schema is a single `…_initi
 
 ## Open questions
 
-- GORM repository **adapters** in `internal/adapter/outbound` implementing the
-  `port/outbound` repositories (deferred).
-- The **seed migration** is done: it normalizes `.cirius-harness/00-system.yaml` into the
-  `models` catalog, the `tools` catalog, the `agents` (roles), and their `agent_tools` grants.
-  The per-agent **model** lines are not seeded — model is bound per session
-  (`session_agents.model_id`). **Fallbacks** are not modeled yet. Agent **policies** into
-  `casbin_rule` remain deferred (Casbin-owned, [ADR-0003](../adr/0003-authorization-casbin-abac.md)).
+- GORM **driven adapters** in `internal/infra` implementing the domain `Writer`/`Reader`
+  interfaces via a `UnitOfWork`/`ReadStore` ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
+  — the first exists (`infra/sqlite/unitofwork` + `infra/sqlite/repo`: `command.UnitOfWork` +
+  `model.Writer`); the rest
+  (agents/sessions/projects/…) and the whole read side are deferred.
+- The **`models` catalog is client-reported**, not seeded: a client syncs its enabled models
+  in at session start and the catalog is a global cumulative union
+  ([ADR-0011](../adr/0011-client-reported-model-catalog.md)). The original model seed was
+  removed by `…_remove_model_seed.sql`.
+- The **seed migration** still normalizes `.cirius-harness/00-system.yaml` into the `tools`
+  catalog, the `agents` (roles), and their `agent_tools` grants. The per-agent **model** lines
+  are not seeded — model is bound per session (`session_agents.model_id`). **Fallbacks** are
+  not modeled yet. Agent **policies** into `casbin_rule` remain deferred (Casbin-owned,
+  [ADR-0003](../adr/0003-authorization-casbin-abac.md)).
 - **Unit of work** for cross-repository transactions (lands with the use cases).
 - **Path-scoped permissions** for `scribe` (knowledge store only) via Casbin `keyMatch`.
 - `cmd/harness` entrypoint exists with a `serve` subcommand — the Pi client stdio handshake

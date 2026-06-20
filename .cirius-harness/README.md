@@ -12,6 +12,15 @@ orchestration, concurrency).
 `00-system.yaml` is the team you get **out of the box** when your workspace defines
 nothing. A user override layer that merges on top of it is **deferred** (see below).
 
+> **Models are client-reported** ([ADR-0011](../docs/adr/0011-client-reported-model-catalog.md)).
+> The harness no longer ships a model list — each client (Pi first) syncs its enabled models
+> into the catalog at session start. The `model:` / `fallbacks:` lines here name models by
+> `provider/slug`; the harness resolves them against what the client actually offers.
+>
+> **Planned relocation** (with the config-merge slice): this system config moves to embedded
+> `services/harness/assets/00-system-config.yaml` (shipped in the binary), and the user
+> override becomes `.cirius-harness/config.yaml` merged on top.
+
 ## Archetypes
 
 Each agent has an **archetype** — its purpose-level operating style — backed by the model

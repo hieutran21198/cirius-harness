@@ -62,8 +62,8 @@ Per [ADR-0003](../adr/0003-authorization-casbin-abac.md) — Casbin ABAC, policy
   `authz.Action`.
 - **Decision** — the three-valued outcome: `allow`, `ask`, or `deny`. Type:
   `authz.Decision`.
-- **Authorizer** — the outbound port that resolves (principal, resource, action) → Decision.
-  Type: `outbound.Authorizer` (`internal/port/outbound`); Casbin implementation in
-  `internal/adapter/outbound/casbinauthz`.
+- **Authorizer** — resolves (principal, resource, action) → Decision. Concrete Casbin
+  implementation in `internal/infra/casbin`; its interface is defined by the consuming use case
+  when one lands ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
 - **Policy** — one authorization rule, stored as a `casbin_rule` row (adapter-owned),
   carrying its own decision in the `dec` field.

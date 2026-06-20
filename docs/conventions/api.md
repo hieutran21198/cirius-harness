@@ -22,6 +22,24 @@ Every contract has **one** authoritative definition:
 Consumers generate from the authoritative schema; they do **not** hand-roll types.
 (Concrete file locations land with the layout decision in ADR-0001.)
 
+### `harness serve` stdio frames
+
+Each frame is one LF-delimited JSON object with a `type` and an optional `id` the client
+sets and the harness echoes on the reply (so a client can correlate request↔response).
+
+| Direction | `type` | Purpose |
+| --- | --- | --- |
+| in  | `hello` | client announces itself (`cwd`, `pid`) |
+| out | `ready` | handshake accepted (`schemaVersion`, `dbPath`, `pid`) |
+| in  | `ping` | liveness probe |
+| out | `pong` | reply to ping |
+| in  | `models` | client reports its enabled models (`client`, `models: [{provider, slug}]`) — synced into the catalog ([ADR-0011](../adr/0011-client-reported-model-catalog.md)) |
+| out | `models_synced` | sync result (`added`, `total`) |
+| out | `error` | a frame could not be handled (`message`) |
+
+New frames are additive (same rule as cmd output). The Go contract lives in
+`services/harness/internal/delivery/pilink`.
+
 ## Versioning
 
 - **cmd**: flags and output fields are additive. A breaking change ships a new

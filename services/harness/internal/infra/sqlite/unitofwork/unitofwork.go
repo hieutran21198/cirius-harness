@@ -1,0 +1,38 @@
+// Package unitofwork is the GORM-backed implementation of the app's
+// command.UnitOfWork (ADR-0013): it composes the repo writers and runs them inside
+// a transaction.
+package unitofwork
+
+import (
+	"context"
+
+	"gorm.io/gorm"
+
+	"harness-workspace/services/harness/internal/app/command"
+	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/infra/sqlite/repo"
+)
+
+// UnitOfWork is the command.UnitOfWork. Its writers autocommit per call over the
+// base connection; DoTx runs a closure inside a single GORM transaction, handing
+// the closure a UnitOfWork bound to that transaction.
+type UnitOfWork struct {
+	db *gorm.DB
+}
+
+// New builds a UnitOfWork over db.
+func New(db *gorm.DB) *UnitOfWork { return &UnitOfWork{db: db} }
+
+// Models returns the model catalog writer bound to this unit of work's handle.
+func (u *UnitOfWork) Models() model.Writer { return repo.NewModelWriter(u.db) }
+
+// DoTx runs fn inside one transaction: every writer obtained from the txU shares
+// it, committing on nil and rolling back on error (or panic).
+func (u *UnitOfWork) DoTx(ctx context.Context, fn func(ctx context.Context, tx command.TransactionalUnitOfWork) error) error {
+	return u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(ctx, &UnitOfWork{db: tx})
+	})
+}
+
+// staticcheck: ensure UnitOfWork satisfies the command port.
+var _ command.UnitOfWork = (*UnitOfWork)(nil)

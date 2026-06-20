@@ -30,11 +30,13 @@ const maxLine = 1 << 20 // 1 MiB
 // Message types on the wire. Each frame is a JSON object carrying a "type" and an
 // optional "id" used by the client to correlate a reply with its request.
 const (
-	typeHello = "hello" // in:  client announces itself
-	typePing  = "ping"  // in:  liveness probe
-	typeReady = "ready" // out: handshake accepted, harness is live
-	typePong  = "pong"  // out: reply to ping
-	typeError = "error" // out: a frame could not be handled
+	typeHello        = "hello"         // in:  client announces itself
+	typePing         = "ping"          // in:  liveness probe
+	typeModels       = "models"        // in:  client reports its enabled models
+	typeReady        = "ready"         // out: handshake accepted, harness is live
+	typePong         = "pong"          // out: reply to ping
+	typeModelsSynced = "models_synced" // out: catalog sync result
+	typeError        = "error"         // out: a frame could not be handled
 )
 
 // envelope is the common header decoded from every inbound frame to route it.
@@ -72,6 +74,32 @@ type PongResp struct {
 	ID   string `json:"id,omitempty"`
 }
 
+// ModelRef is one model the client offers, by provider and slug (Pi's model id).
+type ModelRef struct {
+	Provider string `json:"provider"`
+	Slug     string `json:"slug"`
+}
+
+// ModelsReq is the inbound "models" frame: the client's enabled models, synced
+// into the catalog at session start.
+type ModelsReq struct {
+	Type string `json:"type"`
+	ID   string `json:"id,omitempty"`
+	// Client identifies the reporting client (e.g. "pi"), for diagnostics.
+	Client string `json:"client,omitempty"`
+	// Models is the client's enabled (provider, slug) set.
+	Models []ModelRef `json:"models"`
+}
+
+// ModelsSyncedResp is the outbound reply to a "models" frame: how many refs were
+// newly added and the catalog total after the sync.
+type ModelsSyncedResp struct {
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	Added int    `json:"added"`
+	Total int    `json:"total"`
+}
+
 // errorResp is the outbound frame for an unhandled inbound frame.
 type errorResp struct {
 	Type    string `json:"type"`
@@ -84,6 +112,9 @@ type errorResp struct {
 type Handler interface {
 	// Hello builds the ReadyResp for a hello frame (e.g. reads the schema version).
 	Hello(ctx context.Context, req HelloReq) (ReadyResp, error)
+	// SyncModels upserts the client's reported models into the catalog and reports
+	// how many were newly added and the catalog total.
+	SyncModels(ctx context.Context, req ModelsReq) (ModelsSyncedResp, error)
 }
 
 // Serve runs the NDJSON request/response loop until in reaches EOF or ctx is
@@ -155,6 +186,19 @@ func dispatch(ctx context.Context, enc *json.Encoder, h Handler, env envelope, r
 
 	case typePing:
 		return enc.Encode(PongResp{Type: typePong, ID: env.ID})
+
+	case typeModels:
+		var req ModelsReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return enc.Encode(errorResp{Type: typeError, ID: env.ID, Message: fmt.Sprintf("invalid models: %v", err)})
+		}
+		resp, err := h.SyncModels(ctx, req)
+		if err != nil {
+			return enc.Encode(errorResp{Type: typeError, ID: env.ID, Message: err.Error()})
+		}
+		resp.Type = typeModelsSynced
+		resp.ID = env.ID
+		return enc.Encode(resp)
 
 	default:
 		return enc.Encode(errorResp{Type: typeError, ID: env.ID, Message: fmt.Sprintf("unknown type %q", env.Type)})

@@ -21,7 +21,7 @@ does not call models directly. Three goals:
 │   ├── go/                 # ONE Go module - subdirs are packages, not modules
 │   │   └── <name>/         # Shared package (import .../packages/go/<name>)
 │   └── ts/libs/<name>/     # nx-managed shared TS libraries
-├── services/<name>/        # Deployable backend service. Own go.mod. Hexagonal + DDD.
+├── services/<name>/        # Deployable backend service. Own go.mod. Idiomatic-Go layers + DDD.
 ├── deploy/                 # Deployment / environment config (citizens, env overlays)
 ├── devenv.{nix,yaml}       # Sole source of truth for dev tooling
 ├── go.work                 # Lists every Go module
@@ -58,7 +58,7 @@ does not call models directly. Three goals:
 - **One Go module per service. ONE Go module for all shared packages (`packages/go/`).** Services are independent deploy artifacts; shared internal packages have no external consumers and don't need independent versioning. Escape hatch documented in `packages/go/AGENTS.md`.
 - **`devenv tasks run <name>` is the only task entrypoint.** No Makefiles, no ad-hoc shell scripts at root.
 - **ADRs are append-only.** A decision is changed by writing a new ADR that supersedes the old one, never by editing history.
-- **Hexagonal in services means dependencies point inward.** Layout is `internal/{domain,port,application,adapter}`, with `port` and `adapter` split into `inbound`/`outbound` ([ADR-0004](docs/adr/0004-ports-and-adapters-topology.md)). The direction is `adapter → application → port → domain`; nothing inner imports `adapter`. The layout + linter rule are documented in `services/AGENTS.md`.
+- **Services use idiomatic-Go layers with dependencies pointing inward.** Layout is `internal/{domain,app,delivery,infra}` ([ADR-0013](docs/adr/0013-idiomatic-go-layout-and-unit-of-work.md), superseding the port/adapter hexagon of ADR-0004): `app` holds CQRS use cases and owns its driven ports (defined where consumed, e.g. `command.UnitOfWork`); `delivery` holds driving adapters that declare the app-usecase interface they call; `infra` holds driven adapters. The direction is `delivery`/`infra` → `app` → `domain`; nothing inner imports `delivery`/`infra`. Documented in `services/AGENTS.md`.
 
 ## Anti-patterns (this workspace)
 
@@ -100,7 +100,7 @@ go run ./cmd/migrate <up|down|status|version|create <purpose>>   # migration CLI
 
 - `go.work` lists modules explicitly. If `go build ./...` doesn't see a new module, you forgot `go work use ./path/to/module`.
 - nx's `workspaceLayout` is overridden to `packages/ts/libs` - generators that hard-code `libs/` will land in the wrong place. Always pass `--directory=packages/ts/libs/<name>` to `nx generate`.
-- The **Pi extension** is an nx app at `apps/pi-harness-extension/`; `devenv tasks run pi-extension:build` esbuild-bundles it into `.pi/extensions/harness/index.js` (gitignored output) where Pi loads it. It's the TypeScript half of the `pilink` inbound adapter — the Go half is `services/harness/internal/adapter/inbound/pilink`. Edit the source under `apps/`, never the build output under `.pi/`. See [ADR-0010](docs/adr/0010-ts-build-pipeline-apps-to-pi-extensions.md).
+- The **Pi extension** is an nx app at `apps/pi-harness-extension/`; `devenv tasks run pi-extension:build` esbuild-bundles it into `.pi/extensions/harness/index.js` (gitignored output) where Pi loads it. It's the TypeScript half of the `pilink` delivery adapter — the Go half is `services/harness/internal/delivery/pilink`. Edit the source under `apps/`, never the build output under `.pi/`. See [ADR-0010](docs/adr/0010-ts-build-pipeline-apps-to-pi-extensions.md).
 - **Biome** (lint/format for `apps/` TS) is provided by `devenv.nix`, not npm — its npm binary is dynamically linked and won't run on NixOS. After pulling, `direnv reload` so `biome` is on `PATH` for `nx lint`.
 - `.pre-commit-config.yaml` is gitignored. The intent: each contributor wires hooks locally without forcing a shared list. If you want enforcement, move it out of `.gitignore` and propose via an ADR.
 

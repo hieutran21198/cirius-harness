@@ -1,18 +1,21 @@
 /**
- * cirius-harness — Pi client integration (ADR-0008).
+ * cirius-harness — Pi client integration (ADR-0008, ADR-0011).
  *
  * Direction: Pi launches the harness. On session_start this extension spawns
- * `harness serve` as a child process and performs a hello/ready handshake over
- * stdio (newline-delimited JSON). The child is killed on session_shutdown, so
- * each Pi session owns exactly one harness process.
+ * `harness serve` as a child process, performs a hello/ready handshake, then syncs
+ * Pi's enabled models into the harness catalog — all over stdio (newline-delimited
+ * JSON). The child is killed on session_shutdown, so each Pi session owns exactly
+ * one harness process.
  *
- * Slice 1 is connect-only: it proves the channel is live (reporting the DB schema
- * version) and surfaces it in the footer. No governance yet — model handoff,
- * permission gating, and tool grants come later and will ride this same channel.
+ * Slice 1: connect + model sync. The harness learns which models exist from the
+ * client (ADR-0011) rather than shipping a hardcoded list. Governance (model
+ * handoff, permission gating, tool grants) and session create/resume come later
+ * over this same channel.
  *
- * Framing note: the harness speaks strict LF-delimited JSON. We split child
- * stdout on "\n" by hand and never use Node `readline`, which also breaks on
- * U+2028/U+2029 (valid inside JSON strings) — see Pi's docs/rpc.md.
+ * Framing note: the harness speaks strict LF-delimited JSON. We split child stdout
+ * on "\n" by hand and never use Node `readline`, which also breaks on U+2028/U+2029
+ * (valid inside JSON strings) — see Pi's docs/rpc.md. Requests carry an `id`; the
+ * harness echoes it on the reply, so a small pending-request map correlates them.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
@@ -21,13 +24,17 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 const STATUS_KEY = "harness";
 const BINARY_REL = ".cirius-harness/bin/harness";
-const HANDSHAKE_TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT_MS = 5000;
 
 interface ReadyResp {
-	type: "ready";
 	schemaVersion: number;
 	dbPath: string;
 	pid: number;
+}
+
+interface ModelsSyncedResp {
+	added: number;
+	total: number;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -96,47 +103,85 @@ export default function (pi: ExtensionAPI) {
 		proc.stderr?.setEncoding("utf8");
 		proc.stderr?.on("data", (chunk: string) => console.error(`[harness] ${chunk.trimEnd()}`));
 
-		// Wait for the ready frame (or an error / timeout). Buffer is local to this
-		// spawn so a superseded child can never bleed into the next one.
-		const ready = new Promise<ReadyResp>((resolve, reject) => {
-			const timer = setTimeout(
-				() => reject(new Error("handshake timed out")),
-				HANDSHAKE_TIMEOUT_MS,
-			);
-			let buf = "";
-			proc.stdout?.setEncoding("utf8");
-			proc.stdout?.on("data", (chunk: string) => {
-				buf += chunk;
-				let nl: number;
-				// biome-ignore lint/suspicious/noAssignInExpressions: standard line-split loop
-				while ((nl = buf.indexOf("\n")) >= 0) {
-					const line = buf.slice(0, nl);
-					buf = buf.slice(nl + 1);
-					if (!line) continue;
-					let msg: { type?: string; message?: string; schemaVersion?: number };
-					try {
-						msg = JSON.parse(line);
-					} catch {
-						continue; // ignore non-JSON noise on the protocol channel
-					}
-					if (msg.type === "ready") {
-						clearTimeout(timer);
-						resolve(msg as ReadyResp);
-					} else if (msg.type === "error") {
-						clearTimeout(timer);
-						reject(new Error(msg.message ?? "harness error"));
-					}
+		// Request router: one LF line-reader over this child's stdout resolves pending
+		// requests by `id`. State is local to this spawn so a superseded child can
+		// never bleed into the next one.
+		const pending = new Map<
+			string,
+			{ resolve: (v: unknown) => void; reject: (e: Error) => void }
+		>();
+		let seq = 0;
+		let buf = "";
+		proc.stdout?.setEncoding("utf8");
+		proc.stdout?.on("data", (chunk: string) => {
+			buf += chunk;
+			let nl: number;
+			// biome-ignore lint/suspicious/noAssignInExpressions: standard line-split loop
+			while ((nl = buf.indexOf("\n")) >= 0) {
+				const line = buf.slice(0, nl);
+				buf = buf.slice(nl + 1);
+				if (!line) continue;
+				let msg: { type?: string; id?: string; message?: string };
+				try {
+					msg = JSON.parse(line);
+				} catch {
+					continue; // ignore non-JSON noise on the protocol channel
 				}
-			});
+				const waiter = msg.id ? pending.get(msg.id) : undefined;
+				if (!waiter || !msg.id) continue;
+				pending.delete(msg.id);
+				if (msg.type === "error") waiter.reject(new Error(msg.message ?? "harness error"));
+				else waiter.resolve(msg);
+			}
 		});
 
-		proc.stdin?.write(`${JSON.stringify({ type: "hello", cwd: ctx.cwd, pid: process.pid })}\n`);
+		// request writes a frame with a fresh id and resolves on the matching reply
+		// (or rejects on an error frame / timeout).
+		const request = <T>(frame: Record<string, unknown>): Promise<T> => {
+			const id = `r${++seq}`;
+			return new Promise<T>((resolve, reject) => {
+				const timer = setTimeout(() => {
+					pending.delete(id);
+					reject(new Error("request timed out"));
+				}, REQUEST_TIMEOUT_MS);
+				pending.set(id, {
+					resolve: (v) => {
+						clearTimeout(timer);
+						resolve(v as T);
+					},
+					reject: (e) => {
+						clearTimeout(timer);
+						reject(e);
+					},
+				});
+				try {
+					proc.stdin?.write(`${JSON.stringify({ ...frame, id })}\n`);
+				} catch (err) {
+					clearTimeout(timer);
+					pending.delete(id);
+					reject(err as Error);
+				}
+			});
+		};
 
 		try {
-			const r = await ready;
+			const ready = await request<ReadyResp>({ type: "hello", cwd: ctx.cwd, pid: process.pid });
 			if (child !== proc) return; // session changed while we waited
-			setStatus(ctx, `● harness · schema v${r.schemaVersion}`);
-			notify(ctx, `harness connected (schema v${r.schemaVersion})`, "info");
+			setStatus(ctx, `● harness · schema v${ready.schemaVersion}`);
+
+			// Sync Pi's enabled models (those with configured auth) into the catalog.
+			const models = ctx.modelRegistry
+				.getAvailable()
+				.map((m) => ({ provider: m.provider, slug: m.id }));
+			const synced = await request<ModelsSyncedResp>({ type: "models", client: "pi", models });
+			if (child !== proc) return;
+
+			setStatus(ctx, `● harness · schema v${ready.schemaVersion} · ${synced.total} models`);
+			notify(
+				ctx,
+				`harness connected (schema v${ready.schemaVersion}; synced ${synced.added} new / ${synced.total} models)`,
+				"info",
+			);
 		} catch (err) {
 			if (child === proc) teardown();
 			setStatus(ctx, undefined);

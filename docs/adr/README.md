@@ -56,3 +56,6 @@ $EDITOR "docs/adr/${NEXT}-${TITLE}.md"
 - [0008-pi-client-integration-stdio](0008-pi-client-integration-stdio.md) - Pi extension launches `harness serve` as a per-session stdio (NDJSON) child
 - [0009-deployment-topology-per-client-harness](0009-deployment-topology-per-client-harness.md) - one child-harness per client (citizen); central motherboard deferred to Module 2
 - [0010-ts-build-pipeline-apps-to-pi-extensions](0010-ts-build-pipeline-apps-to-pi-extensions.md) - Pi extension source in `apps/`, esbuild-built into `.pi/extensions/` via a devenv task
+- [0011-client-reported-model-catalog](0011-client-reported-model-catalog.md) - models are client-reported (synced at session start) into a global cumulative catalog; seed removed
+- [0012-cqrs-application-layer](0012-cqrs-application-layer.md) - CQRS application layer (command/query handlers + decorators); replaces the named `port/inbound` interfaces of ADR-0004
+- [0013-idiomatic-go-layout-and-unit-of-work](0013-idiomatic-go-layout-and-unit-of-work.md) - flatten to `domain/app/delivery/infra` (app-owned driven ports, consumer-defined interfaces); UnitOfWork for commands; supersedes ADR-0004

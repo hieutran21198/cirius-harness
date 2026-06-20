@@ -1,10 +1,10 @@
 # 0004. Ports & adapters topology (inbound/outbound)
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0013](0013-idiomatic-go-layout-and-unit-of-work.md)
 - **Date**: 2026-06-19
 - **Deciders**: hieu
 - **Supersedes**: ADR-0001 layout (in part); the port-location language of ADR-0002 (§repository pattern) and ADR-0003 (§authorizer location)
-- **Superseded by**: -
+- **Superseded by**: [ADR-0012](0012-cqrs-application-layer.md) (the `port/inbound` use-case interfaces) and [ADR-0013](0013-idiomatic-go-layout-and-unit-of-work.md) (the whole port/adapter topology → `domain/app/delivery/infra`)
 
 ## Context
 

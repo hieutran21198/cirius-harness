@@ -1,21 +1,24 @@
 # Persistence conventions
 
 Data, repository, and migration rules for every Go service that stores state. Decided in
-[ADR-0002](../adr/0002-persistence-and-migrations.md) (engine + tooling) and
-[ADR-0003](../adr/0003-authorization-casbin-abac.md) (authorization).
+[ADR-0002](../adr/0002-persistence-and-migrations.md) (engine + tooling),
+[ADR-0003](../adr/0003-authorization-casbin-abac.md) (authorization), and
+[ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md) (Reader/Writer + UnitOfWork).
 
 ## Domain ↔ storage boundary
 
 - **The domain is pure.** Aggregates and value types in `internal/domain` carry **no GORM
   tags and no GORM import**, and **no infrastructure interfaces** — only aggregates, value
   objects, and validation errors. Mapping to rows is the adapter's job.
-- **Repository ports live in `internal/port/outbound`; impls live in `internal/adapter/outbound`**
-  ([ADR-0004](../adr/0004-ports-and-adapters-topology.md)). Dependencies point inward
-  (hexagonal) — `port` imports `domain`, adapters import `port`, never the reverse.
-- **One aggregate repository per domain, named by the plural** of the aggregate: `Agents`,
-  `Sessions`, `Projects`, `Worktrees`, `Containers`, `Models`, `Tools`. It carries the
-  aggregate's whole graph (e.g. `Sessions.Save` persists a session and its members together;
-  `Agents.Save` persists an agent and its tool grants).
+- **Per-aggregate `Reader`/`Writer` interfaces live in the domain** (e.g. `model.Writer`); they
+  speak only domain types ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
+  Commands obtain `Writer`s from a **`UnitOfWork`** (in `app/command`); queries obtain `Reader`s
+  from a **`ReadStore`** (in `app/query`). GORM implementations live under `internal/infra`.
+  Dependencies point inward — `domain`/`app` never import `infra`.
+- **One `Writer` (and, when a query needs it, `Reader`) per aggregate.** A `Writer.Save` carries
+  the aggregate's whole graph (e.g. a session writer persists a session and its members
+  together; an agent writer persists an agent and its tool grants). Add a Reader/Writer when a
+  use case needs it, not speculatively.
 - **Cross-aggregate references are by the UUID id** (a string), not embedded structs and not
   the natural key — e.g. `session.Member.AgentID` and `session.Member.ModelID`,
   `session.Session.ProjectID`, `worktree.Worktree.ProjectID`,
@@ -23,15 +26,20 @@ Data, repository, and migration rules for every Go service that stores state. De
 - **A polymorphic reference** (e.g. `session.Session.EnvID` keyed by `session.Session.EnvType`)
   has **no foreign key** — the target table varies, so referential integrity is enforced in
   the domain's `Validate()`, not the schema.
-- **Unit of work is deferred** until a use case needs a transaction spanning two
-  repositories; introduce it with that domain, not before.
+- **Commands mutate through a `UnitOfWork`**: `DoTx(ctx, func(tx TransactionalUnitOfWork) error)`
+  runs the closure in one transaction (commit on nil, rollback on error), the writers inside it
+  bound to that transaction ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
+  Implemented by `infra/sqlite/unitofwork` (composing the GORM repos in `infra/sqlite/repo`)
+  over GORM's `db.Transaction`. The **read side** (`ReadStore` + domain `Reader`s, →
+  `infra/sqlite/readstore`) is deferred until the first query.
 
 ## Domain types
 
 - **Enums are typed strings with a `Valid()` method**, not empty structs or bare strings —
   see [go.md](go.md) ("no poor-man's enums"). Each aggregate has a `Validate() error` and a
-  package-level `ErrInvalid<Aggregate>` in its domain package; the repository `ErrNotFound`
-  lives with the ports in `internal/port/outbound`.
+  package-level `ErrInvalid<Aggregate>` in its domain package. A repository `ErrNotFound`
+  sentinel is defined where the read side consumes it, reintroduced with the first `Reader`
+  ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
 
 ## Schema
 
