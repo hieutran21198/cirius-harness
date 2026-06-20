@@ -55,3 +55,4 @@ $EDITOR "docs/adr/${NEXT}-${TITLE}.md"
 - [0007-roles-and-per-session-model-binding](0007-roles-and-per-session-model-binding.md) - agents as roles, per-session model binding, tool catalog, polymorphic session environment
 - [0008-pi-client-integration-stdio](0008-pi-client-integration-stdio.md) - Pi extension launches `harness serve` as a per-session stdio (NDJSON) child
 - [0009-deployment-topology-per-client-harness](0009-deployment-topology-per-client-harness.md) - one child-harness per client (citizen); central motherboard deferred to Module 2
+- [0010-ts-build-pipeline-apps-to-pi-extensions](0010-ts-build-pipeline-apps-to-pi-extensions.md) - Pi extension source in `apps/`, esbuild-built into `.pi/extensions/` via a devenv task

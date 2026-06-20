@@ -99,7 +99,10 @@ export default function (pi: ExtensionAPI) {
 		// Wait for the ready frame (or an error / timeout). Buffer is local to this
 		// spawn so a superseded child can never bleed into the next one.
 		const ready = new Promise<ReadyResp>((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error("handshake timed out")), HANDSHAKE_TIMEOUT_MS);
+			const timer = setTimeout(
+				() => reject(new Error("handshake timed out")),
+				HANDSHAKE_TIMEOUT_MS,
+			);
 			let buf = "";
 			proc.stdout?.setEncoding("utf8");
 			proc.stdout?.on("data", (chunk: string) => {

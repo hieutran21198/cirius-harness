@@ -1,0 +1,41 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "pi-harness-extension",
+  "projectType": "application",
+  "sourceRoot": "apps/pi-harness-extension/src",
+  "targets": {
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "platform": "node",
+        "format": ["esm"],
+        "bundle": true,
+        "main": "apps/pi-harness-extension/src/index.ts",
+        "tsConfig": "apps/pi-harness-extension/tsconfig.json",
+        "outputPath": ".pi/extensions/harness",
+        "external": [
+          "@earendil-works/pi-coding-agent",
+          "@earendil-works/pi-agent-core",
+          "@earendil-works/pi-tui",
+          "@earendil-works/pi-ai",
+          "typebox",
+          "@sinclair/typebox"
+        ],
+        "generatePackageJson": false
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "biome check apps/pi-harness-extension/src"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p apps/pi-harness-extension/tsconfig.json"
+      }
+    }
+  }
+}

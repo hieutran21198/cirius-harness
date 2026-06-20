@@ -25,10 +25,15 @@ node_modules
 .mcp.json
 skills-lock.json
 
-# Pi: ignore runtime state, but track the project's harness extension (ADR-0008)
+# Pi: runtime state AND the built extension are generated; only the README is tracked.
+# The extension SOURCE lives in apps/pi-harness-extension/ and is compiled into
+# .pi/extensions/ via `devenv tasks run pi-extension:build` (ADR-0008).
 .pi/*
-!.pi/extensions/
 !.pi/README.md
+
+# nx
+.nx/cache
+.nx/workspace-data
 
 # Editor assets
 .vscode

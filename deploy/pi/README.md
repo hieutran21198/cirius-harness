@@ -16,8 +16,9 @@ pi  ──spawns on session_start──▶  harness serve   (child process, stdi
         └─ status line: ● harness · schema vN
 ```
 
-When you enter Pi in a trusted project, the tracked extension `.pi/extensions/harness`
-launches `.cirius-harness/bin/harness serve`, performs a hello/ready handshake over stdio
+When you enter Pi in a trusted project, the extension `.pi/extensions/harness` (built from
+`apps/pi-harness-extension/`) launches `.cirius-harness/bin/harness serve`, performs a
+hello/ready handshake over stdio
 ([ADR-0008](../../docs/adr/0008-pi-client-integration-stdio.md)), and shows liveness in the
 footer. The harness process exits with the Pi session. This first slice is **connect-only** —
 no model/permission/tool governance yet.
@@ -27,10 +28,11 @@ no model/permission/tool governance yet.
 - Pi installed and on `PATH` (`pi --version`).
 - An environment overlay selected — for development that is
   [`../environment/local`](../environment/local/README.md).
-- The harness binary built:
+- The harness binary and the Pi extension built:
 
   ```bash
-  devenv tasks run harness:build      # → .cirius-harness/bin/harness
+  devenv tasks run harness:build        # → .cirius-harness/bin/harness
+  devenv tasks run pi-extension:build   # → .pi/extensions/harness/index.js
   ```
 
 ## Run

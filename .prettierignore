@@ -1,0 +1,4 @@
+# The Pi extension TS app is owned by Biome (tabs); keep nx format:write (Prettier) off it.
+apps/pi-harness-extension/
+# Generated extension build output.
+.pi/

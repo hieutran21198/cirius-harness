@@ -4,14 +4,15 @@ This workspace is governed by **cirius-harness** through the **Pi** coding clien
 (`@earendil-works/pi-coding-agent`, pi.dev). The harness is a control plane *over* Pi: when
 you enter Pi here, a project-local extension launches the harness and connects to it.
 
-Only `extensions/` (and this README) are tracked; everything else Pi writes under `.pi/`
-(sessions, settings, installed packages, auth) is gitignored runtime state.
+Only this README is tracked. Everything else under `.pi/` is generated or runtime state: the
+`extensions/harness/` extension is **built** from `apps/pi-harness-extension/` (see below), and
+Pi's own sessions, settings, installed packages, and auth are gitignored.
 
 ## What's here
 
 | Path | Role |
 | --- | --- |
-| `extensions/harness/` | Pi extension that launches `harness serve` on session start and connects over stdio ([ADR-0008](../docs/adr/0008-pi-client-integration-stdio.md)). |
+| `extensions/harness/` | **Build output** (gitignored) — the compiled Pi extension that launches `harness serve` on session start and connects over stdio ([ADR-0008](../docs/adr/0008-pi-client-integration-stdio.md)). Source lives in [`apps/pi-harness-extension/`](../apps/pi-harness-extension/); build with `devenv tasks run pi-extension:build`. |
 
 The extension spawns one harness process per Pi session, performs a hello/ready handshake
 (newline-delimited JSON over stdio), shows liveness in the footer, and kills the process on
@@ -26,7 +27,14 @@ permission gating, and tool grants come later over the same channel.
    devenv tasks run harness:build
    ```
 
-2. **Trust the project** so Pi loads the project-local extension (project-local extensions
+2. **Build the Pi extension** (compiles `apps/pi-harness-extension/` into
+   `.pi/extensions/harness/index.js`, where Pi loads it):
+
+   ```bash
+   devenv tasks run pi-extension:build
+   ```
+
+3. **Trust the project** so Pi loads the project-local extension (project-local extensions
    load only after trust is resolved). Either start Pi with `-a`:
 
    ```bash
@@ -42,6 +50,8 @@ extension notifies you to run the build task.
 ## Troubleshooting
 
 - **"harness: binary missing"** — run `devenv tasks run harness:build`, then `/reload`.
+- **Extension never loads** (not in Pi's startup header) — build it:
+  `devenv tasks run pi-extension:build` (Pi loads `.pi/extensions/harness/index.js`).
 - **No status appears** — confirm the project is trusted (`/trust`) and the extension is
   loaded (it shows in Pi's startup header).
 - **Inspect the channel manually** — `harness serve` speaks NDJSON on stdio:

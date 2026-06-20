@@ -27,6 +27,11 @@
     gopls
     gotools
 
+    # ts tooling — biome (lint/format for the apps/ TS projects). Provided here,
+    # not via npm: biome's npm binary is dynamically linked and won't run on
+    # NixOS, whereas esbuild (static Go) is fine to keep as an npm dep.
+    biome
+
     # general
     jq
     yq-go
@@ -155,12 +160,21 @@
     };
 
     "harness:build" = {
-      description = "Build the harness binary (.cirius-harness/bin/harness) for the Pi extension";
+      description = "Build the harness binary (.cirius-harness/bin/harness)";
       exec = ''
         set -euo pipefail
         mkdir -p .cirius-harness/bin
         go build -o .cirius-harness/bin/harness ./services/harness/cmd/harness
         echo "built .cirius-harness/bin/harness"
+      '';
+    };
+
+    "pi-extension:build" = {
+      description = "Build the Pi harness extension into .pi/extensions/harness";
+      exec = ''
+        set -euo pipefail
+        pnpm -w exec nx build pi-harness-extension
+        echo "built .pi/extensions/harness/index.js"
       '';
     };
   };

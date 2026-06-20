@@ -98,6 +98,8 @@ go run ./cmd/migrate <up|down|status|version|create <purpose>>   # migration CLI
 
 - `go.work` lists modules explicitly. If `go build ./...` doesn't see a new module, you forgot `go work use ./path/to/module`.
 - nx's `workspaceLayout` is overridden to `packages/ts/libs` - generators that hard-code `libs/` will land in the wrong place. Always pass `--directory=packages/ts/libs/<name>` to `nx generate`.
+- The **Pi extension** is an nx app at `apps/pi-harness-extension/`; `devenv tasks run pi-extension:build` esbuild-bundles it into `.pi/extensions/harness/index.js` (gitignored output) where Pi loads it. It's the TypeScript half of the `pilink` inbound adapter — the Go half is `services/harness/internal/adapter/inbound/pilink`. Edit the source under `apps/`, never the build output under `.pi/`. See [ADR-0010](docs/adr/0010-ts-build-pipeline-apps-to-pi-extensions.md).
+- **Biome** (lint/format for `apps/` TS) is provided by `devenv.nix`, not npm — its npm binary is dynamically linked and won't run on NixOS. After pulling, `direnv reload` so `biome` is on `PATH` for `nx lint`.
 - `.pre-commit-config.yaml` is gitignored. The intent: each contributor wires hooks locally without forcing a shared list. If you want enforcement, move it out of `.gitignore` and propose via an ADR.
 
 <!-- CODEGRAPH_START -->

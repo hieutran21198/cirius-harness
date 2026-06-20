@@ -10,6 +10,11 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {},
   "devDependencies": {
+    "@nx/esbuild": "^23.0.0",
+    "@nx/js": "^23.0.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.1",
+    "nx": "^23.0.0",
     "typescript": "^5.5.0"
   }
 }
