@@ -88,7 +88,7 @@ func serve(dbPath string) error {
 	// Apply migrations on start so the per-session child is self-sufficient: the
 	// schema must exist before models can be synced (ADR-0008 spirit — the harness
 	// lifecycle is bound to the session, with nothing to run out of band).
-	if err := m.Up(ctx); err != nil {
+	if err = m.Up(ctx); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 	version, err := m.Version(ctx)
@@ -136,9 +136,9 @@ func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyR
 // reported refs into domain models, drives the application handler, and maps the
 // result back to the wire. No business logic lives here (ADR-0004, ADR-0012).
 func (h *handler) SyncModels(ctx context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
-	reported := make([]model.Model, len(req.Models))
+	reported := make([]model.Ref, len(req.Models))
 	for i, ref := range req.Models {
-		reported[i] = model.Model{Provider: ref.Provider, Slug: ref.Slug}
+		reported[i] = model.Ref{Provider: ref.Provider, Slug: ref.Slug}
 	}
 	res, err := h.app.Commands.SyncModels.Handle(ctx, command.SyncModels{Reported: reported})
 	if err != nil {

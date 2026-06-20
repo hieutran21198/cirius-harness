@@ -16,9 +16,9 @@ import (
 )
 
 // SyncModels is the command to sync a client's reported models into the catalog.
-// Each reported model carries (provider, slug); the id is minted for new entries.
+// Each reported ref carries (provider, slug); the id is minted for new entries.
 type SyncModels struct {
-	Reported []model.Model
+	Reported []model.Ref
 }
 
 // SyncModelsResult reports the outcome of a catalog sync.
@@ -53,29 +53,38 @@ func (h syncModelsHandler) Handle(ctx context.Context, cmd SyncModels) (SyncMode
 	var res SyncModelsResult
 	err := h.uow.DoTx(ctx, func(ctx context.Context, tx TransactionalUnitOfWork) error {
 		models := tx.Models()
-		seen, err := models.ExistingKeys(ctx)
+		// Dedup the reported refs first: keeps Added accurate and collapses
+		// within-batch duplicates before the existence lookup.
+		uniq := make([]model.Ref, 0, len(cmd.Reported))
+		seen := make(map[model.Ref]struct{}, len(cmd.Reported))
+		for _, r := range cmd.Reported {
+			if _, ok := seen[r]; ok {
+				continue
+			}
+			seen[r] = struct{}{}
+			uniq = append(uniq, r)
+		}
+		existing, err := models.Existing(ctx, uniq)
 		if err != nil {
 			return fmt.Errorf("load model keys: %w", err)
 		}
-		newModels := make([]model.Model, 0, len(cmd.Reported))
-		for _, r := range cmd.Reported {
-			key := r.Ref()
-			if _, ok := seen[key]; ok {
-				continue // already in the catalog, or earlier in this batch
+		newModels := make([]model.Model, 0, len(uniq))
+		for _, r := range uniq {
+			if _, ok := existing[r]; ok {
+				continue // already in the cumulative catalog
 			}
-			seen[key] = struct{}{} // dedup duplicates within the reported list
-			id, err := uuid.NewV7()
-			if err != nil {
-				return fmt.Errorf("mint model id: %w", err)
+			id, mkErr := uuid.NewV7()
+			if mkErr != nil {
+				return fmt.Errorf("mint model id: %w", mkErr)
 			}
-			m, err := model.New(id.String(), r.Provider, r.Slug)
-			if err != nil {
-				return err
+			m, mkErr := model.New(id.String(), r.Provider, r.Slug)
+			if mkErr != nil {
+				return mkErr
 			}
 			newModels = append(newModels, m)
 		}
 		if len(newModels) > 0 {
-			if err := models.SaveAll(ctx, newModels); err != nil {
+			if err = models.SaveAll(ctx, newModels); err != nil {
 				return fmt.Errorf("save models: %w", err)
 			}
 		}

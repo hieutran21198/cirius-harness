@@ -69,8 +69,8 @@ func TestDoTxRollsBackOnError(t *testing.T) {
 		t.Fatalf("model.New: %v", err)
 	}
 	err = uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
-		if err := tx.Models().SaveAll(ctx, []model.Model{m1}); err != nil {
-			return err
+		if saveErr := tx.Models().SaveAll(ctx, []model.Model{m1}); saveErr != nil {
+			return saveErr
 		}
 		return boom // abort → the save above must roll back
 	})

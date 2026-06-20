@@ -10,31 +10,37 @@ import (
 	"harness-workspace/services/harness/internal/domain/model"
 )
 
-// fakeWriter is an in-memory model.Writer keyed by (provider, slug) — mirroring the
-// real catalog's natural key, so SaveAll upserts on Ref() and ids stay stable. saves
-// counts the total models passed to SaveAll across calls.
+// fakeWriter is an in-memory model.Writer keyed by Ref — mirroring the real catalog's
+// natural key, so SaveAll upserts on the ref and ids stay stable. saves counts the
+// total models passed to SaveAll across calls.
 type fakeWriter struct {
-	byRef map[string]model.Model
+	byRef map[model.Ref]model.Model
 	saves int
 }
 
-func (w *fakeWriter) ExistingKeys(_ context.Context) (map[string]struct{}, error) {
-	keys := make(map[string]struct{}, len(w.byRef))
-	for ref := range w.byRef {
-		keys[ref] = struct{}{}
+func refOf(m model.Model) model.Ref { return model.Ref{Provider: m.Provider, Slug: m.Slug} }
+
+// Existing returns the subset of refs already present — the targeted-lookup behaviour.
+func (w *fakeWriter) Existing(_ context.Context, refs []model.Ref) (map[model.Ref]struct{}, error) {
+	out := make(map[model.Ref]struct{}, len(refs))
+	for _, r := range refs {
+		if _, ok := w.byRef[r]; ok {
+			out[r] = struct{}{}
+		}
 	}
-	return keys, nil
+	return out, nil
 }
 
 func (w *fakeWriter) SaveAll(_ context.Context, ms []model.Model) error {
 	for _, m := range ms {
 		w.saves++
-		if existing, ok := w.byRef[m.Ref()]; ok {
+		ref := refOf(m)
+		if existing, ok := w.byRef[ref]; ok {
 			existing.Enabled = m.Enabled
-			w.byRef[m.Ref()] = existing
+			w.byRef[ref] = existing
 			continue
 		}
-		w.byRef[m.Ref()] = m
+		w.byRef[ref] = m
 	}
 	return nil
 }
@@ -45,7 +51,7 @@ func (w *fakeWriter) Count(_ context.Context) (int, error) { return len(w.byRef)
 // transaction in the in-memory fake), exercising the handler's orchestration.
 type fakeUoW struct{ w *fakeWriter }
 
-func newFakeUoW() *fakeUoW { return &fakeUoW{w: &fakeWriter{byRef: map[string]model.Model{}}} }
+func newFakeUoW() *fakeUoW { return &fakeUoW{w: &fakeWriter{byRef: map[model.Ref]model.Model{}}} }
 
 func (u *fakeUoW) Models() model.Writer { return u.w }
 
@@ -53,10 +59,10 @@ func (u *fakeUoW) DoTx(ctx context.Context, fn func(context.Context, command.Tra
 	return fn(ctx, u)
 }
 
-func refs(provSlug ...string) []model.Model {
-	out := make([]model.Model, 0, len(provSlug)/2)
+func refs(provSlug ...string) []model.Ref {
+	out := make([]model.Ref, 0, len(provSlug)/2)
 	for i := 0; i+1 < len(provSlug); i += 2 {
-		out = append(out, model.Model{Provider: provSlug[i], Slug: provSlug[i+1]})
+		out = append(out, model.Ref{Provider: provSlug[i], Slug: provSlug[i+1]})
 	}
 	return out
 }
@@ -96,7 +102,8 @@ func TestSyncModelsCumulativeIdempotent(t *testing.T) {
 	if _, err := h.Handle(ctx, command.SyncModels{Reported: refs("openai", "gpt-5.5")}); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
-	firstID := uow.w.byRef["openai/gpt-5.5"].ID
+	gpt := model.Ref{Provider: "openai", Slug: "gpt-5.5"}
+	firstID := uow.w.byRef[gpt].ID
 
 	// Re-sync the same ref plus a new one.
 	res, err := h.Handle(ctx, command.SyncModels{
@@ -109,7 +116,7 @@ func TestSyncModelsCumulativeIdempotent(t *testing.T) {
 		t.Fatalf("got %+v, want added=1 total=2", res)
 	}
 	// The existing ref keeps its id and is not re-saved (skipped, not upserted).
-	if got := uow.w.byRef["openai/gpt-5.5"].ID; got != firstID {
+	if got := uow.w.byRef[gpt].ID; got != firstID {
 		t.Fatalf("existing id changed: %s -> %s", firstID, got)
 	}
 	if uow.w.saves != 2 {
@@ -120,7 +127,7 @@ func TestSyncModelsCumulativeIdempotent(t *testing.T) {
 func TestSyncModelsRejectsInvalid(t *testing.T) {
 	ctx := context.Background()
 	h := command.NewSyncModelsHandler(newFakeUoW(), discardLogger())
-	if _, err := h.Handle(ctx, command.SyncModels{Reported: []model.Model{{Provider: "", Slug: "x"}}}); err == nil {
+	if _, err := h.Handle(ctx, command.SyncModels{Reported: []model.Ref{{Provider: "", Slug: "x"}}}); err == nil {
 		t.Fatal("Handle should reject a ref with empty provider")
 	}
 }

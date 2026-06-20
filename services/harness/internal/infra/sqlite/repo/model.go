@@ -38,20 +38,30 @@ type modelWriter struct {
 // base connection or an open transaction.
 func NewModelWriter(db *gorm.DB) model.Writer { return modelWriter{db: db} }
 
-// ExistingKeys returns the natural keys ("provider/slug") present in the catalog as a
-// set, for an in-memory membership check before a batch upsert.
-func (w modelWriter) ExistingKeys(ctx context.Context) (map[string]struct{}, error) {
+// Existing returns which of the given refs are already in the catalog, as a set
+// keyed by Ref. The lookup is a single (provider, slug) tuple IN query scoped to the
+// refs, so it pulls only matching rows — its cost scales with the request size.
+func (w modelWriter) Existing(ctx context.Context, refs []model.Ref) (map[model.Ref]struct{}, error) {
+	out := make(map[model.Ref]struct{}, len(refs))
+	if len(refs) == 0 {
+		return out, nil
+	}
+	tuples := make([][]any, len(refs))
+	for i, r := range refs {
+		tuples[i] = []any{r.Provider, r.Slug}
+	}
 	var rows []modelRow
 	err := w.db.WithContext(ctx).Model(&modelRow{}).
-		Select("provider", "slug").Find(&rows).Error
+		Select("provider", "slug").
+		Where("(provider, slug) IN ?", tuples).
+		Find(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("repo.modelWriter.ExistingKeys: %w", err)
+		return nil, fmt.Errorf("repo.modelWriter.Existing: %w", err)
 	}
-	keys := make(map[string]struct{}, len(rows))
 	for _, r := range rows {
-		keys[r.Provider+"/"+r.Slug] = struct{}{}
+		out[model.Ref{Provider: r.Provider, Slug: r.Slug}] = struct{}{}
 	}
-	return keys, nil
+	return out, nil
 }
 
 // SaveAll upserts the models on their natural key (provider, slug) in one batch: an

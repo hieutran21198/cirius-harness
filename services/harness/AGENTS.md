@@ -42,7 +42,8 @@ migrations/                  # seed system agents + policies — future
   `New` — it never sets domain fields directly ([conventions/go.md](../../docs/conventions/go.md)).
 - **Store**: SQLite via `packages/go/gormdb`, at `.cirius-harness/state/harness.sqlite`.
 - **Persistence is CQRS (ADR-0013)**: per-aggregate `Reader`/`Writer` interfaces live in the
-  **domain** (first: `model.Writer` — ExistingKeys/SaveAll/Count). Commands mutate through
+  **domain** (first: `model.Writer` — Existing(refs)/SaveAll/Count, the lookup keyed by
+  `model.Ref`). Commands mutate through
   `command.UnitOfWork` (`DoTx` = one GORM transaction), implemented by `infra/sqlite/unitofwork`
   composing `infra/sqlite/repo` (the GORM Reader/Writer impls). The read side
   (`query.ReadStore` + domain `Reader`s, → `infra/sqlite/readstore`) is **deferred**. Other

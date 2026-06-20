@@ -38,7 +38,7 @@ func newDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestModelWriterSaveAllExistingKeysCount(t *testing.T) {
+func TestModelWriterSaveAllExistingCount(t *testing.T) {
 	ctx := context.Background()
 	w := repo.NewModelWriter(newDB(t))
 
@@ -46,18 +46,23 @@ func TestModelWriterSaveAllExistingKeysCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model.New: %v", err)
 	}
-	if err := w.SaveAll(ctx, []model.Model{m1}); err != nil {
+	if err = w.SaveAll(ctx, []model.Model{m1}); err != nil {
 		t.Fatalf("SaveAll: %v", err)
 	}
-	keys, err := w.ExistingKeys(ctx)
+
+	gpt := model.Ref{Provider: "openai", Slug: "gpt-5.5"}
+	absent := model.Ref{Provider: "anthropic", Slug: "claude-opus-4-8"}
+	// Targeted lookup: returns only the queried refs that exist (the present one,
+	// not the absent one).
+	existing, err := w.Existing(ctx, []model.Ref{gpt, absent})
 	if err != nil {
-		t.Fatalf("ExistingKeys: %v", err)
+		t.Fatalf("Existing: %v", err)
 	}
-	if _, ok := keys["openai/gpt-5.5"]; !ok {
-		t.Fatalf("ExistingKeys = %v; want it to contain openai/gpt-5.5", keys)
+	if _, ok := existing[gpt]; !ok {
+		t.Fatalf("Existing = %v; want it to contain %s", existing, gpt)
 	}
-	if _, ok := keys["anthropic/claude-opus-4-8"]; ok {
-		t.Fatalf("ExistingKeys = %v; should not contain an unsaved ref", keys)
+	if _, ok := existing[absent]; ok {
+		t.Fatalf("Existing = %v; should not contain the absent ref %s", existing, absent)
 	}
 
 	// Re-save the same (provider, slug) with a different id → upsert, not a new row.
@@ -65,7 +70,7 @@ func TestModelWriterSaveAllExistingKeysCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model.New: %v", err)
 	}
-	if err := w.SaveAll(ctx, []model.Model{m2}); err != nil {
+	if err = w.SaveAll(ctx, []model.Model{m2}); err != nil {
 		t.Fatalf("re-SaveAll: %v", err)
 	}
 	n, err := w.Count(ctx)

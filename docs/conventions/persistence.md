@@ -18,9 +18,10 @@ Data, repository, and migration rules for every Go service that stores state. De
 - **One `Writer` (and, when a query needs it, `Reader`) per aggregate.** A `Writer` save carries
   the aggregate's whole graph (e.g. a session writer persists a session and its members
   together; an agent writer persists an agent and its tool grants). Methods are sized to the
-  use case — `model.Writer` batches: `SaveAll` upserts many at once, `ExistingKeys` reads the
-  present natural keys for an in-memory membership check before the batch. Add a Reader/Writer
-  when a use case needs it, not speculatively.
+  use case — `model.Writer` batches: `SaveAll` upserts many at once, `Existing(refs)` does a
+  targeted lookup (a `(provider, slug)` tuple `IN` over the reported `model.Ref`s, keyed by the
+  comparable `Ref`) for a membership check before the batch — its cost scales with the request,
+  not the catalog. Add a Reader/Writer when a use case needs it, not speculatively.
 - **Cross-aggregate references are by the UUID id** (a string), not embedded structs and not
   the natural key — e.g. `session.Member.AgentID` and `session.Member.ModelID`,
   `session.Session.ProjectID`, `worktree.Worktree.ProjectID`,
