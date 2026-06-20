@@ -9,7 +9,8 @@ Applies to every Go module in the repo: services, shared packages, and tools.
   `.golangci.yml`: `default: standard` plus high-signal linters that reinforce these
   conventions — `errorlint` (`%w` + `errors.Is/As`), `revive` (exported doc-comments,
   error/context naming), `gocritic`, `unconvert`, `unparam`, `bodyclose`, `misspell`,
-  `nakedret`, `wastedassign`, `copyloopvar` — with `gofmt`/`goimports` as formatters
+  `nakedret`, `wastedassign`, `copyloopvar`, plus `govet`'s `shadow` analyzer (catches a
+  variable — typically `err` — shadowing one from an enclosing scope) — with `gofmt`/`goimports` as formatters
   (`goimports.local-prefixes: harness-workspace`). `revive`'s `unused-parameter` is excluded
   on purpose: `ctx` stays the named first parameter even when unused (see Concurrency). The
   two module configs are kept **identical** — when adding a module, copy a sibling's verbatim.

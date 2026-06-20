@@ -16,6 +16,10 @@ linters:
     - nakedret # naked returns in long funcs
     - wastedassign # assignments never read
     - copyloopvar # redundant loop-var copies (Go 1.22+)
+  settings:
+    govet:
+      enable:
+        - shadow # flag variables shadowing an enclosing scope (e.g. err re-decls)
   exclusions:
     presets:
       - common-false-positives
