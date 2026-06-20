@@ -15,12 +15,14 @@ does not call models directly. Three goals:
 ## Layout (authoritative)
 
 ```
+├── apps/<name>/            # nx-managed apps: client adapters & UIs (e.g. Pi extension → .pi/extensions)
 ├── docs/                   # Documentations: ADRs, specs, conventions, glossary...
 ├── packages/
 │   ├── go/                 # ONE Go module - subdirs are packages, not modules
 │   │   └── <name>/         # Shared package (import .../packages/go/<name>)
 │   └── ts/libs/<name>/     # nx-managed shared TS libraries
 ├── services/<name>/        # Deployable backend service. Own go.mod. Hexagonal + DDD.
+├── deploy/                 # Deployment / environment config (citizens, env overlays)
 ├── devenv.{nix,yaml}       # Sole source of truth for dev tooling
 ├── go.work                 # Lists every Go module
 ├── nx.json                 # nx workspace
@@ -42,7 +44,7 @@ does not call models directly. Three goals:
 | Add a deployable backend service       | `services/`                                     |
 | Add a shared Go package                | `packages/go/`                                  |
 | Add a shared TS library                | `packages/ts/`                                  |
-| Add a UI application                   | `apps/`                                          |
+| Add a UI app or client adapter (e.g. a citizen's extension) | `apps/`                     |
 | Change deployment / environment config | `deploy/`                                        |
 | Record evidence on a model / tool / client | [docs/research/](docs/research/README.md)   |
 | Record a what-to-use decision          | [docs/pdr/](docs/pdr/README.md)                 |

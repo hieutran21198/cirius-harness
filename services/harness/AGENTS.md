@@ -22,6 +22,7 @@ internal/
     ├── inbound/             # driving adapters (CLI/MCP/events)
     │   └── pilink/          # Pi client wire: NDJSON-over-stdio serve loop (ADR-0008).
     │                        #   Transport only; Handler implemented by cmd/harness.
+    │                        #   TS client half: apps/pi-harness-extension (ADR-0010).
     └── outbound/
         └── casbinauthz/     # Casbin-backed outbound.Authorizer; embeds model.conf, stores
                              #   policy in casbin_rule via packages/go/casbinx.

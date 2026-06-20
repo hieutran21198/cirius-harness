@@ -17,6 +17,7 @@ Three goals:
 
 ```
 ├── docs/                # ADRs, specs, conventions, glossary, research, PDRs
+├── apps/<name>/         # nx-managed apps — client adapters & UIs (e.g. the Pi extension)
 ├── packages/
 │   ├── go/              # ONE Go module — shared packages (gormdb, migrate, casbinx, slogx)
 │   └── ts/libs/         # nx-managed shared TS libraries

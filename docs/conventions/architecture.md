@@ -14,6 +14,16 @@ A hexagon has two kinds of edge. Name them:
   external clients. The interface is an **outbound port**; the implementation is an
   **outbound adapter**.
 
+### Adapters that span a process boundary
+
+An inbound adapter can have a **client-side half outside the Go service** — in another
+language or process. The Pi integration is the canonical example: the Go `pilink` inbound
+adapter ([ADR-0008](../adr/0008-pi-client-integration-stdio.md)) is *driven* by a TypeScript
+Pi extension that lives in `apps/pi-harness-extension/` and talks to it over stdio. The
+service still only sees an inbound adapter; the extension is that adapter's far end, built
+into the client's load path ([ADR-0010](../adr/0010-ts-build-pipeline-apps-to-pi-extensions.md)).
+One such app per **citizen** (the governed client), kept out of `services/` and `packages/`.
+
 ## Layout
 
 ```
