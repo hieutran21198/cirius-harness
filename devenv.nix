@@ -153,5 +153,15 @@
         go run ./services/harness/cmd/migrate status
       '';
     };
+
+    "harness:build" = {
+      description = "Build the harness binary (.cirius-harness/bin/harness) for the Pi extension";
+      exec = ''
+        set -euo pipefail
+        mkdir -p .cirius-harness/bin
+        go build -o .cirius-harness/bin/harness ./services/harness/cmd/harness
+        echo "built .cirius-harness/bin/harness"
+      '';
+    };
   };
 }

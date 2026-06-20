@@ -175,7 +175,9 @@ There is no production history yet, so the initial schema is a single `…_initi
   `casbin_rule` remain deferred (Casbin-owned, [ADR-0003](../adr/0003-authorization-casbin-abac.md)).
 - **Unit of work** for cross-repository transactions (lands with the use cases).
 - **Path-scoped permissions** for `scribe` (knowledge store only) via Casbin `keyMatch`.
-- `cmd/harness` entrypoint (the `migrate` CLI may fold into a subcommand).
+- `cmd/harness` entrypoint exists with a `serve` subcommand — the Pi client stdio handshake
+  ([ADR-0008](../adr/0008-pi-client-integration-stdio.md)). The `migrate` CLI may still fold
+  into a subcommand later; MCP / events adapters and client **governance** remain deferred.
 
 ## References
 

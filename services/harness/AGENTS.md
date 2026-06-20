@@ -6,7 +6,8 @@
 ## Layout
 
 ```
-cmd/harness/                 # CLI entrypoint (cmd contract) — future
+cmd/harness/                 # CLI entrypoint (cmd contract): `serve` stdio handshake (ADR-0008)
+cmd/migrate/                 # DB migration CLI (embedded goose)
 internal/
 ├── domain/
 │   ├── agent/               # agent bounded context: Agent aggregate + enums (pure).
@@ -18,7 +19,9 @@ internal/
 │   └── outbound/            # driven ports: Agents/Projects/Sessions/Worktrees repos + Authorizer.
 ├── application/             # use cases — future
 └── adapter/
-    ├── inbound/             # driving adapters (CLI/MCP/events) — future
+    ├── inbound/             # driving adapters (CLI/MCP/events)
+    │   └── pilink/          # Pi client wire: NDJSON-over-stdio serve loop (ADR-0008).
+    │                        #   Transport only; Handler implemented by cmd/harness.
     └── outbound/
         └── casbinauthz/     # Casbin-backed outbound.Authorizer; embeds model.conf, stores
                              #   policy in casbin_rule via packages/go/casbinx.
@@ -39,6 +42,9 @@ migrations/                  # seed system agents + policies — future
 
 ## Status
 
-Interface + domain types for `agent`; authz domain + Casbin adapter implemented. Deferred:
-the GORM `Agents` store, policy/agent **seeding**, the `cmd/harness` entrypoint, MCP /
-events / client adapters, and the unit-of-work (added with the second domain).
+Domain types + repository interfaces for `agent`/`project`/`session`/`worktree`/`container`/
+`model`/`tool`; authz domain + Casbin adapter; seed migrations; and the `cmd/harness serve`
+Pi handshake (`adapter/inbound/pilink`, [ADR-0008](../../docs/adr/0008-pi-client-integration-stdio.md))
+implemented. Deferred: the GORM repository stores, policy/Casbin **seeding**, MCP / events
+adapters, all client **governance** (model handoff, permission gating, tool grants), and the
+unit-of-work (added with the use cases).

@@ -12,8 +12,9 @@ node_modules
 # pre-commit
 .pre-commit-config.yaml
 
-# harness runtime state (SQLite DBs + WAL/SHM sidecars)
+# harness runtime state (SQLite DBs + WAL/SHM sidecars) + built binary
 /.cirius-harness/state/
+/.cirius-harness/bin/
 
 # AI assets
 .agents
@@ -21,9 +22,13 @@ node_modules
 .claude
 .codegraph
 .gemini
-.pi
 .mcp.json
 skills-lock.json
+
+# Pi: ignore runtime state, but track the project's harness extension (ADR-0008)
+.pi/*
+!.pi/extensions/
+!.pi/README.md
 
 # Editor assets
 .vscode

@@ -11,7 +11,11 @@ network service. Adding either is an architectural decision and needs an ADR.
 Every contract has **one** authoritative definition:
 
 - **CLI command (cmd)** → the command's flags, arguments, and structured (JSON)
-  output schema, defined in one place per command.
+  output schema, defined in one place per command. The Pi-facing inbound contract is
+  `harness serve` ([ADR-0008](../adr/0008-pi-client-integration-stdio.md)): a stdio
+  process spoken in **newline-delimited JSON** — **stdout is the protocol channel,
+  stderr is for logs**, framing is **LF-only** (split on `\n`; do not use readers that
+  also break on U+2028/U+2029).
 - **MCP** → tool and resource schemas (JSON Schema) published by the MCP server.
 - **Async events** → event schemas (JSON Schema or AsyncAPI) for the event stream.
 

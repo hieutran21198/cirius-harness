@@ -53,3 +53,4 @@ $EDITOR "docs/adr/${NEXT}-${TITLE}.md"
 - [0005-surrogate-uuid-v7-keys](0005-surrogate-uuid-v7-keys.md) - UUID v7 surrogate PK on every aggregate
 - [0006-model-catalog-and-agent-profiles](0006-model-catalog-and-agent-profiles.md) - first-class models + immutable agent profiles (session-pinned) — superseded by 0007
 - [0007-roles-and-per-session-model-binding](0007-roles-and-per-session-model-binding.md) - agents as roles, per-session model binding, tool catalog, polymorphic session environment
+- [0008-pi-client-integration-stdio](0008-pi-client-integration-stdio.md) - Pi extension launches `harness serve` as a per-session stdio (NDJSON) child
