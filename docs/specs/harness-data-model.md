@@ -22,7 +22,11 @@ packages that persist them.
 
 ## Design
 
-### Two domains (pure domain + per-aggregate Reader/Writer; UnitOfWork/ReadStore — [ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
+### Two domains (one encapsulated `domain` package + per-aggregate Reader/Writer; UnitOfWork/ReadStore — [ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md), [ADR-0014](../adr/0014-domain-encapsulation-single-package.md))
+
+The aggregates below live in a single `internal/domain` package with **unexported** fields;
+the attribute lists are the conceptual data model (columns), reached via `NewXxx`/`RehydrateXxx`
+and grouped views, not public Go fields ([ADR-0014](../adr/0014-domain-encapsulation-single-package.md)).
 
 **agent** — the declarative team, as **roles** bound to models at session time
 ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)):
@@ -31,19 +35,19 @@ packages that persist them.
   — a pure **role**; it carries **no model** and no fallbacks. `ToolIDs` are grants into the
   tool catalog (persisted via `agent_tools`). Typed-string enums `Archetype`
   (communicator | principle-driven | utility-runner | none) and `Source` (system | user).
-  (`agent.Reader`/`Writer` added when a use case needs it.)
+  (`domain.AgentReader`/`Writer` added when a use case needs it.)
 - `Tool` aggregate (ID, Name, Description) — the capability **catalog**
-  (read | grep | glob | list | edit | bash | webfetch | websearch), `tool.Tool`
-  (`internal/domain/tool`). (`tool.Reader`/`Writer` added when a use case needs it.)
+  (read | grep | glob | list | edit | bash | webfetch | websearch), `domain.Tool`.
+  (`domain.ToolReader`/`Writer` added when a use case needs it.)
 - `Model` aggregate (ID, Provider, Slug, Enabled) — the first-class catalog of available
-  provider/model-ids (`Slug` is the provider's model name), `model.Model`
-  (`internal/domain/model`). Persisted via `model.Writer` through `command.UnitOfWork` →
+  provider/model-ids (`Slug` is the provider's model name), `domain.Model`. Persisted via
+  `domain.ModelWriter` through `command.UnitOfWork` →
   `infra/sqlite/{unitofwork,repo}`. Which model an agent uses is bound **per session** (see `Member.ModelID`),
   not stored on the agent.
 
 Permissions are **not** here — authorization is Casbin
 ([ADR-0003](../adr/0003-authorization-casbin-abac.md)); the `infra/casbin` authorizer returns
-`authz.Decision` (allow | ask | deny) for an `authz.Action`; the principal stays the agent
+`domain.Decision` (allow | ask | deny) for a `domain.Action`; the principal stays the agent
 **name**.
 
 **orchestration** — the runtime. A session is scoped to a project and runs in a polymorphic
@@ -170,7 +174,7 @@ There is no production history yet, so the initial schema is a single `…_initi
 - GORM **driven adapters** in `internal/infra` implementing the domain `Writer`/`Reader`
   interfaces via a `UnitOfWork`/`ReadStore` ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
   — the first exists (`infra/sqlite/unitofwork` + `infra/sqlite/repo`: `command.UnitOfWork` +
-  `model.Writer`); the rest
+  `domain.ModelWriter`); the rest
   (agents/sessions/projects/…) and the whole read side are deferred.
 - The **`models` catalog is client-reported**, not seeded: a client syncs its enabled models
   in at session start and the catalog is a global cumulative union

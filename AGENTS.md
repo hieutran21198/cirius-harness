@@ -90,8 +90,8 @@ cd services/harness
 go build ./...                       # NOTE: `go build ./...` from the repo ROOT fails —
                                      #   go.work has no module at "."; always build per-module
 go test ./...                        # all tests in this module
-go test ./internal/domain/agent/...  # one package
-go test -run TestAgentValidate ./internal/domain/agent/   # one test
+go test ./internal/domain/...        # one package (domain is a single package — ADR-0014)
+go test -run TestNewModel ./internal/domain/   # one test
 golangci-lint run ./...              # lint this module (per-service .golangci.yml)
 go run ./cmd/migrate <up|down|status|version|create <purpose>>   # migration CLI
 ```

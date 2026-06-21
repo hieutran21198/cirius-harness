@@ -59,3 +59,4 @@ $EDITOR "docs/adr/${NEXT}-${TITLE}.md"
 - [0011-client-reported-model-catalog](0011-client-reported-model-catalog.md) - models are client-reported (synced at session start) into a global cumulative catalog; seed removed
 - [0012-cqrs-application-layer](0012-cqrs-application-layer.md) - CQRS application layer (command/query handlers + decorators); replaces the named `port/inbound` interfaces of ADR-0004
 - [0013-idiomatic-go-layout-and-unit-of-work](0013-idiomatic-go-layout-and-unit-of-work.md) - flatten to `domain/app/delivery/infra` (app-owned driven ports, consumer-defined interfaces); UnitOfWork for commands; supersedes ADR-0004
+- [0014-domain-encapsulation-single-package](0014-domain-encapsulation-single-package.md) - one `domain` package; aggregates encapsulate state behind New/Rehydrate + grouped views; refines ADR-0013

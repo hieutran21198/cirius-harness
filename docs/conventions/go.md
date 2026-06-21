@@ -19,16 +19,46 @@ Applies to every Go module in the repo: services, shared packages, and tools.
 
 ## Domain model
 
-- **Construct aggregates through a package-level `New(...) (T, error)`.** It assembles the
-  struct, applies creation defaults (e.g. a new `model` is `Enabled`, a new `session` is
-  `pending`/`EnvUnset`), and returns `t, t.Validate()`. Callers never build an aggregate by
-  setting fields one by one — that lets invariants leak into the caller.
+The domain is **one package** (`internal/domain`), not a package per aggregate
+([ADR-0014](../adr/0014-domain-encapsulation-single-package.md)): cross-aggregate logic
+collaborates without import ceremony. Because everything shares a package, identifiers are
+**prefixed** to stay unambiguous — `NewModel`/`NewAgent`, `ContainerStatus`/`SessionStatus`
+(+ `ContainerPending`/`SessionPending` constants), `ToolName`, `domain.ModelWriter`.
+
+- **Aggregates expose no public state.** Fields are unexported; domain *meaning* is reached
+  through intention-revealing methods, never by reading or setting a field from another layer.
+  Value objects and typed-string enums (`Ref`, `Kind`, `Archetype`, `EnvType`, `Action`,
+  `Decision`) are the exception — they are equal to their value and stay public-representation.
+- **Two constructors per aggregate.** `NewXxx(...)` is **fresh creation** (used in the app): it
+  takes the business attributes only, **mints its own identity** (a UUID v7, via the shared
+  unexported `newID()`), applies creation defaults (a new `Model` is enabled, a new `Session` is
+  `pending`/`EnvUnset`), and returns `t, t.Validate()`. `RehydrateXxx(...)` is **reconstitution
+  from storage** (used in the repo): it takes every persisted field as-is — including the stored
+  `id` — no defaults, and validates. Callers never build an aggregate field by field.
 - **`Validate()` enforces every invariant, including a non-empty surrogate `ID`.** A
-  default-constructed aggregate must fail `Validate()`.
-- **The id and clock come from the application/adapter, passed *into* `New`.** Mint the
-  UUID v7 (and stamp timestamps) in the use case so the caller knows the id before the write
-  ([persistence.md](persistence.md)); the domain never generates them. The app supplies them
-  as `New` arguments rather than assigning fields after the fact.
+  default-constructed aggregate must fail `Validate()`. (Since `NewXxx` mints the id, an empty
+  id is only reachable on the `RehydrateXxx` path — a corrupt row.)
+- **Identities are typed per aggregate, not bare `string`.** Each aggregate declares a named
+  `~string` id (`ModelID`, `AgentID`, `ProjectID`, …); fields, constructor parameters, and
+  cross-aggregate references use it (`Member{ agentID AgentID; modelID ModelID }`), so passing
+  one aggregate's id where another's is expected is a compile error — the same "no poor-man's
+  primitives" rule the typed-string enums follow, for ~zero runtime cost. `newID[T ~string]()`
+  mints the right type (`id: newID[ModelID]()`). The one exception is a **polymorphic**
+  reference (`Session.envID`, a `WorktreeID` *or* `ContainerID` chosen by `envType`), which
+  stays `string` because a single field can't carry both — integrity is in `Validate()`.
+- **Fresh aggregates own their identity; the clock comes from the application/adapter.** The id
+  *format* (UUID v7) is a domain policy, so `NewXxx` mints it internally — the app supplies only
+  business attributes (`domain.NewModel(provider, slug)`) and never imports `uuid`. The id is
+  still minted in-process before the write, so the caller can read it back from the aggregate
+  (`Snapshot()`), and it is never DB-generated ([persistence.md](persistence.md), ADR-0005).
+  Timestamps are still stamped in the use case and passed into `NewXxx`.
+- **State leaves the domain only through a domain-owned grouped view with a clear purpose.**
+  The persistence view is a `Snapshot()` returning a flat memento (e.g. `ModelSnapshot`) that the
+  repo maps to a row and `RehydrateXxx` mirrors back — never per-field getters. A different
+  purpose (UI/API projection) gets its own named view, added when a consumer needs it.
+- **Domain construction tests are white-box (`package domain`)** so they can assert on
+  unexported fields and creation defaults — a deliberate exception to the external-test rule
+  under Testing below.
 
 ## Errors
 

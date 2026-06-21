@@ -7,28 +7,35 @@ Data, repository, and migration rules for every Go service that stores state. De
 
 ## Domain ↔ storage boundary
 
-- **The domain is pure.** Aggregates and value types in `internal/domain` carry **no GORM
-  tags and no GORM import**, and **no infrastructure interfaces** — only aggregates, value
-  objects, and validation errors. Mapping to rows is the adapter's job.
-- **Per-aggregate `Reader`/`Writer` interfaces live in the domain** (e.g. `model.Writer`); they
-  speak only domain types ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
-  Commands obtain `Writer`s from a **`UnitOfWork`** (in `app/command`); queries obtain `Reader`s
-  from a **`ReadStore`** (in `app/query`). GORM implementations live under `internal/infra`.
-  Dependencies point inward — `domain`/`app` never import `infra`.
+- **The domain is pure and encapsulated.** The single `internal/domain` package
+  ([ADR-0014](../adr/0014-domain-encapsulation-single-package.md)) carries **no GORM tags and no
+  GORM import**; aggregates hold **unexported** fields. The adapter never reads or sets a
+  domain field: it persists an aggregate through its grouped view (`m.Snapshot()` → row) and
+  reconstitutes one through the `RehydrateXxx` constructor (row → aggregate). Both the view and
+  `RehydrateXxx` validate, so a row that violates an invariant fails loudly on the way in.
+- **Per-aggregate `Reader`/`Writer` interfaces live in the `domain` package** (e.g.
+  `domain.ModelWriter`); they speak only domain types
+  ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)). Commands obtain `Writer`s
+  from a **`UnitOfWork`** (in `app/command`); queries obtain `Reader`s from a **`ReadStore`**
+  (in `app/query`). GORM implementations live under `internal/infra`. Dependencies point
+  inward — `domain`/`app` never import `infra`.
 - **One `Writer` (and, when a query needs it, `Reader`) per aggregate.** A `Writer` save carries
   the aggregate's whole graph (e.g. a session writer persists a session and its members
   together; an agent writer persists an agent and its tool grants). Methods are sized to the
-  use case — `model.Writer` batches: `SaveAll` upserts many at once, `Existing(refs)` does a
-  targeted lookup (a `(provider, slug)` tuple `IN` over the reported `model.Ref`s, keyed by the
-  comparable `Ref`) for a membership check before the batch — its cost scales with the request,
-  not the catalog. Add a Reader/Writer when a use case needs it, not speculatively.
-- **Cross-aggregate references are by the UUID id** (a string), not embedded structs and not
-  the natural key — e.g. `session.Member.AgentID` and `session.Member.ModelID`,
-  `session.Session.ProjectID`, `worktree.Worktree.ProjectID`,
-  `container.Container.ProjectID` ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).
-- **A polymorphic reference** (e.g. `session.Session.EnvID` keyed by `session.Session.EnvType`)
-  has **no foreign key** — the target table varies, so referential integrity is enforced in
-  the domain's `Validate()`, not the schema.
+  use case — `domain.ModelWriter` batches: `SaveAll` upserts many at once, `Existing(refs)` does
+  a targeted lookup (a `(provider, slug)` tuple `IN` over the reported `domain.Ref`s, keyed by
+  the comparable `Ref`) for a membership check before the batch — its cost scales with the
+  request, not the catalog. Add a Reader/Writer when a use case needs it, not speculatively.
+- **Cross-aggregate references are by the UUID id**, not embedded structs and not the natural
+  key — e.g. a session member's agent id and model id, a session's project id, a worktree's
+  project id, a container's project id
+  ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). The id is the **owning
+  aggregate's typed `~string`** (`AgentID`, `ModelID`, `ProjectID`, …), not a bare `string`, so
+  a swap is a compile error ([go.md](go.md), [ADR-0014](../adr/0014-domain-encapsulation-single-package.md)).
+- **A polymorphic reference** (e.g. a session's env id keyed by its env type) has **no foreign
+  key** — the target table varies, so referential integrity is enforced in the domain's
+  `Validate()`, not the schema. It is also the one id that stays a bare `string` (it is a
+  `WorktreeID` *or* a `ContainerID`, so no single typed id fits).
 - **Commands mutate through a `UnitOfWork`**: `DoTx(ctx, func(tx TransactionalUnitOfWork) error)`
   runs the closure in one transaction (commit on nil, rollback on error), the writers inside it
   bound to that transaction ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md)).
@@ -54,10 +61,15 @@ Data, repository, and migration rules for every Go service that stores state. De
   [ADR-0007](../adr/0007-roles-and-per-session-model-binding.md). Order rows with an explicit
   `position` column when order matters.
 - **Keys**: every aggregate has a **UUID v7 surrogate** primary key
-  (`id TEXT PRIMARY KEY NOT NULL`), generated in the application/adapter with `uuid.NewV7()`
-  ([ADR-0005](../adr/0005-surrogate-uuid-v7-keys.md)). Natural keys (agent name, project
-  name, worktree path) are `UNIQUE NOT NULL` attributes — the business/lookup key, not the
-  identity. SQLite generates nothing: mint the id before insert. Clock stamping likewise
+  (`id TEXT PRIMARY KEY NOT NULL`), **minted inside the `NewXxx` constructor** (via the domain's
+  shared `newID()` → `uuid.Must(uuid.NewV7())`) — the id format is a domain policy, so the app
+  supplies only business attributes and never imports `uuid`
+  ([ADR-0005](../adr/0005-surrogate-uuid-v7-keys.md)). Natural keys (agent name, project name,
+  worktree path) are `UNIQUE NOT NULL` attributes — the business/lookup key, not the identity.
+  SQLite generates nothing: the id exists on the in-memory aggregate before the insert (the
+  caller reads it back via `Snapshot()`), never from the DB. The id is a **typed `~string`**
+  (`ModelID`, …); the grouped view carries the typed id and the GORM row struct holds a plain
+  `string`, so the single `string(id)` cast lives in the repo's row mapper. Clock stamping still
   happens in the application/adapter, not the domain.
 - **Per-run config is bound on the run, not the definition.** Rather than versioning a shared
   definition, record the choice on the runtime row that uses it — e.g. the model an agent ran
@@ -93,9 +105,11 @@ m, _ := migrate.New(sqlDB, fsys, migrate.DialectSQLite)  // packages/go/migrate
 ## Anti-patterns
 
 - Natural-key primary keys, or a DB `DEFAULT` / GORM `BeforeCreate` hook that mints ids in
-  the persistence layer — generate the UUID v7 in the use case so the caller knows it before
-  the write, and pass it into the aggregate's `New` constructor ([go.md](go.md)), never
-  assign it to a field after the fact.
+  the persistence layer — the UUID v7 is minted inside the aggregate's `NewXxx` constructor
+  ([go.md](go.md)), so it exists on the in-memory aggregate before the write; never assign an
+  id to a field after the fact.
+- The app importing `uuid` to mint ids — the id format is a domain policy; construct via
+  `domain.NewXxx(...)` (which mints internally) instead.
 - Storing a per-run choice (e.g. the model) on a shared, editable definition row — record it
   on the runtime row that uses it (`session_agents.model_id`), so editing the definition can't
   rewrite history ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)).

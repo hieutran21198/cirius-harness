@@ -10,12 +10,11 @@
 cmd/harness/                 # CLI entrypoint (cmd contract): `serve` stdio handshake (ADR-0008)
 cmd/migrate/                 # DB migration CLI (embedded goose)
 internal/
-├── domain/
-│   ├── agent/               # agent bounded context: Agent aggregate + enums (pure).
-│   │                        #   Pure, stdlib only. NO permissions (see authz).
-│   ├── model/               # Model aggregate + model.Writer (domain-owned driven port).
-│   ├── project/ session/ worktree/   # orchestration aggregates + value objects (pure).
-│   └── authz/               # authorization value objects: Decision (allow|ask|deny), Action.
+├── domain/                  # ONE encapsulated package (ADR-0014): all aggregates
+│                            #   (Model, Agent, Project, Session, Worktree, Container, Tool),
+│                            #   value objects (Ref) + enums (Decision/Action, Kind, …), and
+│                            #   driven ports (domain.ModelWriter). Pure, stdlib only.
+│                            #   Unexported fields; NewXxx/RehydrateXxx + grouped views.
 ├── app/                     # use cases — CQRS (ADR-0012); owns its driven ports (ADR-0013)
 │   ├── app.go              #   Application{Commands, Queries} + New(uow, logger) wiring
 │   ├── command/            #   write handlers + port.go (UnitOfWork). First: SyncModels.
@@ -27,7 +26,7 @@ internal/
 │                           #   TS client half: apps/pi-harness-extension (ADR-0010).
 └── infra/                  # driven adapters implementing the app's driven ports
     ├── sqlite/             #   GORM persistence, layered:
-    │   ├── repo/           #     Reader/Writer impls (model.Writer; SaveAll upserts on (provider,slug))
+    │   ├── repo/           #     Reader/Writer impls (domain.ModelWriter; SaveAll upserts on (provider,slug))
     │   ├── unitofwork/     #     composes repo writers → command.UnitOfWork (DoTx)
     │   └── readstore/      #     composes repo readers → query.ReadStore (with the first query)
     └── casbin/             #   Casbin authorizer (concrete Decide); model.conf + casbinx.
@@ -36,14 +35,17 @@ migrations/                  # seed system agents + policies — future
 
 ## Persistence & authz
 
-- **Aggregates are constructed via a validating `New(...)` factory** (e.g. `model.New`,
-  `session.New`) that applies creation defaults and validates; `Validate()` enforces a
-  non-empty surrogate `ID`. The app mints the id (and stamps the clock) and passes it into
-  `New` — it never sets domain fields directly ([conventions/go.md](../../docs/conventions/go.md)).
+- **Aggregates are encapsulated** (ADR-0014): unexported fields, no public state. Construct via
+  `NewXxx(...)` in the app (fresh, applies defaults, validates) or `RehydrateXxx(...)` in the
+  repo (reconstitution from a row, no defaults, validates); `Validate()` enforces a non-empty
+  surrogate `ID`. The app mints the id (and stamps the clock) and passes it into `NewXxx`. State
+  leaves the domain only through a grouped view — `Model.Snapshot()` (a `ModelSnapshot`) is the
+  persistence view ([conventions/go.md](../../docs/conventions/go.md)).
 - **Store**: SQLite via `packages/go/gormdb`, at `.cirius-harness/state/harness.sqlite`.
 - **Persistence is CQRS (ADR-0013)**: per-aggregate `Reader`/`Writer` interfaces live in the
-  **domain** (first: `model.Writer` — Existing(refs)/SaveAll/Count, the lookup keyed by
-  `model.Ref`). Commands mutate through
+  **`domain` package** (first: `domain.ModelWriter` — Existing(refs)/SaveAll/Count, the lookup
+  keyed by `domain.Ref`); the repo maps via `Snapshot()`/`RehydrateModel`, not field access.
+  Commands mutate through
   `command.UnitOfWork` (`DoTx` = one GORM transaction), implemented by `infra/sqlite/unitofwork`
   composing `infra/sqlite/repo` (the GORM Reader/Writer impls). The read side
   (`query.ReadStore` + domain `Reader`s, → `infra/sqlite/readstore`) is **deferred**. Other

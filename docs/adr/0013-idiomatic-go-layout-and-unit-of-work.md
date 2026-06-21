@@ -6,6 +6,8 @@
 - **Supersedes**: [ADR-0004](0004-ports-and-adapters-topology.md) (the whole inbound/outbound
   port & adapter topology); refines [ADR-0012](0012-cqrs-application-layer.md) (what handlers depend on)
 - **Superseded by**: -
+- **Refined by**: [ADR-0014](0014-domain-encapsulation-single-package.md) (the `internal/domain`
+  layer becomes one encapsulated package; layout and UnitOfWork here stand)
 
 ## Context
 

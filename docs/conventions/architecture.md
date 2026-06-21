@@ -53,8 +53,9 @@ internal/
 - **Define an interface where it is consumed, when a use case needs it** — not speculatively.
   Driven ports live in the `app` package that calls them (`command.UnitOfWork`,
   `query.ReadStore`); driving ports live in the `delivery` package that calls them.
-- **Per-aggregate `Reader`/`Writer` interfaces live in the domain** (e.g. `model.Writer`) — they
-  reference only domain types. Commands mutate through a **UnitOfWork** (`DoTx` = one
+- **Per-aggregate `Reader`/`Writer` interfaces live in the single `domain` package**
+  (e.g. `domain.ModelWriter` — [ADR-0014](../adr/0014-domain-encapsulation-single-package.md)) —
+  they reference only domain types. Commands mutate through a **UnitOfWork** (`DoTx` = one
   transaction); queries read through a **ReadStore**.
 
 ## Anti-patterns
