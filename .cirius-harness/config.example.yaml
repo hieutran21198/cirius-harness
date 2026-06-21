@@ -1,0 +1,49 @@
+# .cirius-harness/config.example.yaml
+#
+# User overlay — copy to config.yaml. Deep-merged onto the embedded system defaults at
+# session start (ADR-0011 step 2); set only what you want to change.
+#
+# Model names are CLIENT-SPECIFIC (ADR-0015): the same model is reported under different
+# (provider, slug) names per client — GPT-5.5 is `openai-codex/gpt-5.5` under Pi but
+# `openai/gpt-5.5` under opencode — so a model binding is keyed by client.
+#
+#   model:     `provider/slug` (same name for every client)  OR  a {client: name} map.
+#   fallbacks: a list (every client)                          OR  a {client: [list]} map. Ordered.
+#
+# At session start the harness knows the active client, syncs ITS catalog, then resolves each
+# agent: primary -> fallbacks (in order); the first candidate present & enabled in that client's
+# catalog wins. If none are available the agent is skipped with a warning and the session still
+# starts (ADR-0011 step 4).
+#
+# Merge rules (overlay onto the system base): nested maps merge by key (set model.pi without
+# touching opencode); a scalar leaf replaces; a list replaces wholesale; when the two sides
+# differ in kind (scalar vs map) the overlay wins wholesale. An unknown client key is an error.
+version: 1
+
+agents:
+  # GPT-led executor: the openai model is named differently per client -> use a map.
+  implementer:
+    model:
+      pi:       openai-codex/gpt-5.5
+      opencode: openai/gpt-5.5
+    fallbacks: # per-client so each degrades to what IT actually has
+      pi:       [anthropic/claude-opus-4-8]
+      opencode: [anthropic/claude-opus-4-8, deepseek/deepseek-v3]
+    permissions: { read: allow, edit: allow, bash: ask }
+    tools: [read, edit, grep, glob, list, bash]
+
+  # Claude-led orchestrator: same anthropic name across clients -> scalar shorthand.
+  council:
+    model: anthropic/claude-opus-4-8 # applies to every client
+    fallbacks:
+      pi:       [openai-codex/gpt-5.4]
+      opencode: [openai/gpt-5.4]
+
+  # Override ONE client's ONE field — deep-merge keeps the rest of the system default
+  # (here: repoint only Pi's researcher primary; opencode + permissions/tools untouched).
+  researcher:
+    model:
+      pi: openai-codex/gpt-5.4
+
+  # Model-less agent: no binding, client-independent (ADR-0007 `prayer`).
+  # prayer: {}
