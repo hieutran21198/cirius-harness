@@ -1,7 +1,9 @@
-package authz
+package domain
 
-// Action is a capability an agent may be authorized to perform. These mirror
-// the permission keys of the original schema.
+// Action is a capability an agent may be authorized to perform. These mirror the
+// permission keys of the original schema. Authorization itself is a separate
+// concern backed by Casbin (see Decision and internal/infra/casbin); policies live
+// in Casbin, not on the agent.
 type Action string
 
 // Known actions an agent may be authorized for.

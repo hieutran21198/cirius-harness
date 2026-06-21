@@ -11,7 +11,7 @@ import (
 	"harness-workspace/packages/go/gormdb"
 	"harness-workspace/packages/go/gormdb/sqlite"
 	"harness-workspace/services/harness/internal/app/command"
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 	"harness-workspace/services/harness/internal/infra/sqlite/unitofwork"
 )
 
@@ -44,12 +44,12 @@ func TestDoTxCommits(t *testing.T) {
 	ctx := context.Background()
 	uow := unitofwork.New(newDB(t))
 
-	m1, err := model.New("1", "openai", "gpt-5.5")
+	m1, err := domain.NewModel("openai", "gpt-5.5")
 	if err != nil {
-		t.Fatalf("model.New: %v", err)
+		t.Fatalf("domain.NewModel: %v", err)
 	}
 	err = uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
-		return tx.Models().SaveAll(ctx, []model.Model{m1})
+		return tx.Models().SaveAll(ctx, []domain.Model{m1})
 	})
 	if err != nil {
 		t.Fatalf("DoTx: %v", err)
@@ -64,12 +64,12 @@ func TestDoTxRollsBackOnError(t *testing.T) {
 	uow := unitofwork.New(newDB(t))
 	boom := errors.New("boom")
 
-	m1, err := model.New("1", "openai", "gpt-5.5")
+	m1, err := domain.NewModel("openai", "gpt-5.5")
 	if err != nil {
-		t.Fatalf("model.New: %v", err)
+		t.Fatalf("domain.NewModel: %v", err)
 	}
 	err = uow.DoTx(ctx, func(ctx context.Context, tx command.TransactionalUnitOfWork) error {
-		if saveErr := tx.Models().SaveAll(ctx, []model.Model{m1}); saveErr != nil {
+		if saveErr := tx.Models().SaveAll(ctx, []domain.Model{m1}); saveErr != nil {
 			return saveErr
 		}
 		return boom // abort → the save above must roll back

@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"harness-workspace/services/harness/internal/app/command"
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 	"harness-workspace/services/harness/internal/infra/sqlite/repo"
 )
 
@@ -24,7 +24,7 @@ type UnitOfWork struct {
 func New(db *gorm.DB) *UnitOfWork { return &UnitOfWork{db: db} }
 
 // Models returns the model catalog writer bound to this unit of work's handle.
-func (u *UnitOfWork) Models() model.Writer { return repo.NewModelWriter(u.db) }
+func (u *UnitOfWork) Models() domain.ModelWriter { return repo.NewModelWriter(u.db) }
 
 // DoTx runs fn inside one transaction: every writer obtained from the txU shares
 // it, committing on nil and rolling back on error (or panic).

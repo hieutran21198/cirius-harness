@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"harness-workspace/packages/go/casbinx"
-	"harness-workspace/services/harness/internal/domain/authz"
+	"harness-workspace/services/harness/internal/domain"
 )
 
 //go:embed model.conf
@@ -35,18 +35,18 @@ func New(db *gorm.DB) (*Enforcer, error) {
 }
 
 // Decide reads the decision stored on the matched policy line (the 4th field, dec)
-// via EnforceEx. With no matching policy it returns authz.DecisionDeny.
-func (e *Enforcer) Decide(ctx context.Context, principal, resource string, action authz.Action) (authz.Decision, error) {
+// via EnforceEx. With no matching policy it returns domain.DecisionDeny.
+func (e *Enforcer) Decide(ctx context.Context, principal, resource string, action domain.Action) (domain.Decision, error) {
 	matched, explain, err := e.enforcer.EnforceEx(principal, resource, string(action))
 	if err != nil {
-		return authz.DecisionDeny, fmt.Errorf("casbin.Decide: %w", err)
+		return domain.DecisionDeny, fmt.Errorf("casbin.Decide: %w", err)
 	}
 	if !matched || len(explain) < 4 {
-		return authz.DecisionDeny, nil
+		return domain.DecisionDeny, nil
 	}
-	dec := authz.Decision(explain[3])
+	dec := domain.Decision(explain[3])
 	if !dec.Valid() {
-		return authz.DecisionDeny, fmt.Errorf("casbin.Decide: invalid stored decision %q", explain[3])
+		return domain.DecisionDeny, fmt.Errorf("casbin.Decide: invalid stored decision %q", explain[3])
 	}
 	return dec, nil
 }

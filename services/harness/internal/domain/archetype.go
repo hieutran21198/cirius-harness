@@ -1,4 +1,4 @@
-package agent
+package domain
 
 // Archetype classifies an agent by its purpose-level operating style — how it
 // behaves — independent of the model vendor.

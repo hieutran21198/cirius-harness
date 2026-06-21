@@ -1,4 +1,4 @@
-package agent
+package domain
 
 // Source identifies where an agent definition originated.
 type Source string

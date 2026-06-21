@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 )
 
 // modelRow maps the `models` table.
@@ -24,8 +24,12 @@ type modelRow struct {
 
 func (modelRow) TableName() string { return "models" }
 
-func toRow(m model.Model) modelRow {
-	return modelRow{ID: m.ID, Provider: m.Provider, Slug: m.Slug, Enabled: m.Enabled}
+// toRow maps a model's persistence view (its grouped Snapshot) to a table row —
+// the repo never reaches into the aggregate's fields directly.
+func toRow(snap domain.ModelSnapshot) modelRow {
+	// The row's id column is a plain string; snap.ID is the typed domain.ModelID. This
+	// is the one seam where the typed id is flattened for storage.
+	return modelRow{ID: string(snap.ID), Provider: snap.Provider, Slug: snap.Slug, Enabled: snap.Enabled}
 }
 
 // modelWriter is a GORM-backed model.Writer bound to a db handle (the open
@@ -34,15 +38,15 @@ type modelWriter struct {
 	db *gorm.DB
 }
 
-// NewModelWriter builds a model.Writer over db. Callers (the unitofwork) pass the
-// base connection or an open transaction.
-func NewModelWriter(db *gorm.DB) model.Writer { return modelWriter{db: db} }
+// NewModelWriter builds a domain.ModelWriter over db. Callers (the unitofwork) pass
+// the base connection or an open transaction.
+func NewModelWriter(db *gorm.DB) domain.ModelWriter { return modelWriter{db: db} }
 
 // Existing returns which of the given refs are already in the catalog, as a set
 // keyed by Ref. The lookup is a single (provider, slug) tuple IN query scoped to the
 // refs, so it pulls only matching rows — its cost scales with the request size.
-func (w modelWriter) Existing(ctx context.Context, refs []model.Ref) (map[model.Ref]struct{}, error) {
-	out := make(map[model.Ref]struct{}, len(refs))
+func (w modelWriter) Existing(ctx context.Context, refs []domain.Ref) (map[domain.Ref]struct{}, error) {
+	out := make(map[domain.Ref]struct{}, len(refs))
 	if len(refs) == 0 {
 		return out, nil
 	}
@@ -59,7 +63,7 @@ func (w modelWriter) Existing(ctx context.Context, refs []model.Ref) (map[model.
 		return nil, fmt.Errorf("repo.modelWriter.Existing: %w", err)
 	}
 	for _, r := range rows {
-		out[model.Ref{Provider: r.Provider, Slug: r.Slug}] = struct{}{}
+		out[domain.Ref{Provider: r.Provider, Slug: r.Slug}] = struct{}{}
 	}
 	return out, nil
 }
@@ -67,16 +71,14 @@ func (w modelWriter) Existing(ctx context.Context, refs []model.Ref) (map[model.
 // SaveAll upserts the models on their natural key (provider, slug) in one batch: an
 // existing row keeps its id and only `enabled` is updated; a new (provider, slug)
 // inserts with its id.
-func (w modelWriter) SaveAll(ctx context.Context, ms []model.Model) error {
+func (w modelWriter) SaveAll(ctx context.Context, ms []domain.Model) error {
 	if len(ms) == 0 {
 		return nil
 	}
 	rows := make([]modelRow, 0, len(ms))
 	for _, m := range ms {
-		if err := m.Validate(); err != nil {
-			return err
-		}
-		rows = append(rows, toRow(m))
+		// New/Rehydrate already validated the aggregate; map its persistence view.
+		rows = append(rows, toRow(m.Snapshot()))
 	}
 	err := w.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "provider"}, {Name: "slug"}},
@@ -98,4 +100,4 @@ func (w modelWriter) Count(ctx context.Context) (int, error) {
 }
 
 // staticcheck: ensure modelWriter satisfies the domain port.
-var _ model.Writer = modelWriter{}
+var _ domain.ModelWriter = modelWriter{}

@@ -1,4 +1,4 @@
-package project
+package domain
 
 // Kind classifies a project by its repository layout.
 type Kind string

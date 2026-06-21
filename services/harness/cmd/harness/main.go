@@ -24,7 +24,7 @@ import (
 	"harness-workspace/services/harness/internal/app"
 	"harness-workspace/services/harness/internal/app/command"
 	"harness-workspace/services/harness/internal/delivery/pilink"
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 	"harness-workspace/services/harness/internal/infra/sqlite/unitofwork"
 	"harness-workspace/services/harness/migrations"
 )
@@ -136,9 +136,9 @@ func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyR
 // reported refs into domain models, drives the application handler, and maps the
 // result back to the wire. No business logic lives here (ADR-0004, ADR-0012).
 func (h *handler) SyncModels(ctx context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
-	reported := make([]model.Ref, len(req.Models))
+	reported := make([]domain.Ref, len(req.Models))
 	for i, ref := range req.Models {
-		reported[i] = model.Ref{Provider: ref.Provider, Slug: ref.Slug}
+		reported[i] = domain.Ref{Provider: ref.Provider, Slug: ref.Slug}
 	}
 	res, err := h.app.Commands.SyncModels.Handle(ctx, command.SyncModels{Reported: reported})
 	if err != nil {

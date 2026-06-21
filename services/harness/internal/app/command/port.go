@@ -3,7 +3,7 @@ package command
 import (
 	"context"
 
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 )
 
 // The command side's driven ports, defined where they are consumed (ADR-0013):
@@ -13,7 +13,7 @@ import (
 // TransactionalUnitOfWork exposes the writers available within a unit of work.
 // Inside DoTx they are bound to the open transaction.
 type TransactionalUnitOfWork interface {
-	Models() model.Writer
+	Models() domain.ModelWriter
 }
 
 // UnitOfWork is a TransactionalUnitOfWork whose writers autocommit per call, and

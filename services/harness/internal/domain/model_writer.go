@@ -1,12 +1,12 @@
-package model
+package domain
 
 import "context"
 
-// Writer mutates the model catalog. It is a domain-owned driven port (the methods
-// a command needs to sync the catalog): a targeted existence check over the reported
-// refs, a batch upsert, and the catalog count for the sync acknowledgement. It is
-// obtained from a UnitOfWork and implemented by the infra adapter (ADR-0013).
-type Writer interface {
+// ModelWriter mutates the model catalog. It is a domain-owned driven port (the
+// methods a command needs to sync the catalog): a targeted existence check over the
+// reported refs, a batch upsert, and the catalog count for the sync acknowledgement.
+// It is obtained from a UnitOfWork and implemented by the infra adapter (ADR-0013).
+type ModelWriter interface {
 	// Existing returns which of the given refs are already in the catalog, as a set
 	// keyed by Ref — a membership check before a batch upsert. The query is scoped to
 	// the refs, so its cost scales with the request, not the catalog.

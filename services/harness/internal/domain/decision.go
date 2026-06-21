@@ -1,9 +1,4 @@
-// Package authz holds the authorization value objects: the three-valued
-// Decision and the set of Actions an agent can be authorized for. The Casbin
-// authorizer lives in internal/infra/casbin (its interface is defined by the
-// consuming use case when one lands — ADR-0013); policies live in Casbin, not in
-// the agent table.
-package authz
+package domain
 
 // Decision is the three-valued outcome of an authorization check.
 type Decision string

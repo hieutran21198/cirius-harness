@@ -9,16 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
-
 	"harness-workspace/services/harness/internal/app/decorator"
-	"harness-workspace/services/harness/internal/domain/model"
+	"harness-workspace/services/harness/internal/domain"
 )
 
 // SyncModels is the command to sync a client's reported models into the catalog.
 // Each reported ref carries (provider, slug); the id is minted for new entries.
 type SyncModels struct {
-	Reported []model.Ref
+	Reported []domain.Ref
 }
 
 // SyncModelsResult reports the outcome of a catalog sync.
@@ -55,8 +53,8 @@ func (h syncModelsHandler) Handle(ctx context.Context, cmd SyncModels) (SyncMode
 		models := tx.Models()
 		// Dedup the reported refs first: keeps Added accurate and collapses
 		// within-batch duplicates before the existence lookup.
-		uniq := make([]model.Ref, 0, len(cmd.Reported))
-		seen := make(map[model.Ref]struct{}, len(cmd.Reported))
+		uniq := make([]domain.Ref, 0, len(cmd.Reported))
+		seen := make(map[domain.Ref]struct{}, len(cmd.Reported))
 		for _, r := range cmd.Reported {
 			if _, ok := seen[r]; ok {
 				continue
@@ -68,16 +66,12 @@ func (h syncModelsHandler) Handle(ctx context.Context, cmd SyncModels) (SyncMode
 		if err != nil {
 			return fmt.Errorf("load model keys: %w", err)
 		}
-		newModels := make([]model.Model, 0, len(uniq))
+		newModels := make([]domain.Model, 0, len(uniq))
 		for _, r := range uniq {
 			if _, ok := existing[r]; ok {
 				continue // already in the cumulative catalog
 			}
-			id, mkErr := uuid.NewV7()
-			if mkErr != nil {
-				return fmt.Errorf("mint model id: %w", mkErr)
-			}
-			m, mkErr := model.New(id.String(), r.Provider, r.Slug)
+			m, mkErr := domain.NewModel(r.Provider, r.Slug)
 			if mkErr != nil {
 				return mkErr
 			}

@@ -1,4 +1,4 @@
-package session
+package domain
 
 // EnvType identifies the kind of environment a session runs in. It keys the
 // polymorphic EnvID reference (a container id, a worktree id, or none).
