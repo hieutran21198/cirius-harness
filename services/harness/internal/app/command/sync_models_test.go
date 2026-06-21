@@ -55,10 +55,12 @@ func (u *fakeUoW) DoTx(ctx context.Context, fn func(context.Context, command.Tra
 	return fn(ctx, u)
 }
 
+// refs builds (provider, slug) pairs all attributed to one client (ClientPi) — the
+// client is frame-level, so a single sync carries one client's models.
 func refs(provSlug ...string) []domain.Ref {
 	out := make([]domain.Ref, 0, len(provSlug)/2)
 	for i := 0; i+1 < len(provSlug); i += 2 {
-		out = append(out, domain.Ref{Provider: provSlug[i], Slug: provSlug[i+1]})
+		out = append(out, domain.Ref{Client: domain.ClientPi, Provider: provSlug[i], Slug: provSlug[i+1]})
 	}
 	return out
 }
@@ -99,7 +101,7 @@ func TestSyncModelsCumulativeIdempotent(t *testing.T) {
 	if _, err := h.Handle(ctx, command.SyncModels{Reported: refs("openai", "gpt-5.5")}); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
-	gpt := domain.Ref{Provider: "openai", Slug: "gpt-5.5"}
+	gpt := domain.Ref{Client: domain.ClientPi, Provider: "openai", Slug: "gpt-5.5"}
 	firstID := uow.w.byRef[gpt].Snapshot().ID
 
 	// Re-sync the same ref plus a new one.
@@ -124,7 +126,7 @@ func TestSyncModelsCumulativeIdempotent(t *testing.T) {
 func TestSyncModelsRejectsInvalid(t *testing.T) {
 	ctx := context.Background()
 	h := command.NewSyncModelsHandler(newFakeUoW(), discardLogger())
-	if _, err := h.Handle(ctx, command.SyncModels{Reported: []domain.Ref{{Provider: "", Slug: "x"}}}); err == nil {
+	if _, err := h.Handle(ctx, command.SyncModels{Reported: []domain.Ref{{Client: domain.ClientPi, Provider: "", Slug: "x"}}}); err == nil {
 		t.Fatal("Handle should reject a ref with empty provider")
 	}
 }

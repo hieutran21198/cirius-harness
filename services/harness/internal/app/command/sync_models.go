@@ -71,7 +71,7 @@ func (h syncModelsHandler) Handle(ctx context.Context, cmd SyncModels) (SyncMode
 			if _, ok := existing[r]; ok {
 				continue // already in the cumulative catalog
 			}
-			m, mkErr := domain.NewModel(r.Provider, r.Slug)
+			m, mkErr := domain.NewModel(r.Client, r.Provider, r.Slug)
 			if mkErr != nil {
 				return mkErr
 			}

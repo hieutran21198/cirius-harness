@@ -17,6 +17,7 @@ import (
 // modelRow maps the `models` table.
 type modelRow struct {
 	ID       string `gorm:"column:id;primaryKey"`
+	Client   string `gorm:"column:client"`
 	Provider string `gorm:"column:provider"`
 	Slug     string `gorm:"column:slug"`
 	Enabled  bool   `gorm:"column:enabled"`
@@ -27,9 +28,9 @@ func (modelRow) TableName() string { return "models" }
 // toRow maps a model's persistence view (its grouped Snapshot) to a table row —
 // the repo never reaches into the aggregate's fields directly.
 func toRow(snap domain.ModelSnapshot) modelRow {
-	// The row's id column is a plain string; snap.ID is the typed domain.ModelID. This
-	// is the one seam where the typed id is flattened for storage.
-	return modelRow{ID: string(snap.ID), Provider: snap.Provider, Slug: snap.Slug, Enabled: snap.Enabled}
+	// The row's id/client columns are plain strings; the snapshot carries the typed
+	// domain.ModelID / domain.ClientKind. This is the one seam where they're flattened.
+	return modelRow{ID: string(snap.ID), Client: string(snap.Client), Provider: snap.Provider, Slug: snap.Slug, Enabled: snap.Enabled}
 }
 
 // modelWriter is a GORM-backed model.Writer bound to a db handle (the open
@@ -52,25 +53,25 @@ func (w modelWriter) Existing(ctx context.Context, refs []domain.Ref) (map[domai
 	}
 	tuples := make([][]any, len(refs))
 	for i, r := range refs {
-		tuples[i] = []any{r.Provider, r.Slug}
+		tuples[i] = []any{string(r.Client), r.Provider, r.Slug}
 	}
 	var rows []modelRow
 	err := w.db.WithContext(ctx).Model(&modelRow{}).
-		Select("provider", "slug").
-		Where("(provider, slug) IN ?", tuples).
+		Select("client", "provider", "slug").
+		Where("(client, provider, slug) IN ?", tuples).
 		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("repo.modelWriter.Existing: %w", err)
 	}
 	for _, r := range rows {
-		out[domain.Ref{Provider: r.Provider, Slug: r.Slug}] = struct{}{}
+		out[domain.Ref{Client: domain.ClientKind(r.Client), Provider: r.Provider, Slug: r.Slug}] = struct{}{}
 	}
 	return out, nil
 }
 
-// SaveAll upserts the models on their natural key (provider, slug) in one batch: an
-// existing row keeps its id and only `enabled` is updated; a new (provider, slug)
-// inserts with its id.
+// SaveAll upserts the models on their natural key (client, provider, slug) in one
+// batch: an existing row keeps its id and only `enabled` is updated; a new
+// (client, provider, slug) inserts with its id.
 func (w modelWriter) SaveAll(ctx context.Context, ms []domain.Model) error {
 	if len(ms) == 0 {
 		return nil
@@ -81,7 +82,7 @@ func (w modelWriter) SaveAll(ctx context.Context, ms []domain.Model) error {
 		rows = append(rows, toRow(m.Snapshot()))
 	}
 	err := w.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "provider"}, {Name: "slug"}},
+		Columns:   []clause.Column{{Name: "client"}, {Name: "provider"}, {Name: "slug"}},
 		DoUpdates: clause.AssignmentColumns([]string{"enabled"}),
 	}).Create(&rows).Error
 	if err != nil {

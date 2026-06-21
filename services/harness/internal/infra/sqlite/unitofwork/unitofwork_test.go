@@ -29,10 +29,11 @@ func newDB(t *testing.T) *gorm.DB {
 	}
 	err = db.WithContext(ctx).Exec(`CREATE TABLE models (
 		id TEXT PRIMARY KEY,
+		client TEXT NOT NULL,
 		provider TEXT NOT NULL,
 		slug TEXT NOT NULL,
 		enabled INTEGER NOT NULL DEFAULT 0,
-		UNIQUE(provider, slug)
+		UNIQUE(client, provider, slug)
 	)`).Error
 	if err != nil {
 		t.Fatalf("create table: %v", err)
@@ -44,7 +45,7 @@ func TestDoTxCommits(t *testing.T) {
 	ctx := context.Background()
 	uow := unitofwork.New(newDB(t))
 
-	m1, err := domain.NewModel("openai", "gpt-5.5")
+	m1, err := domain.NewModel(domain.ClientPi, "openai", "gpt-5.5")
 	if err != nil {
 		t.Fatalf("domain.NewModel: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestDoTxRollsBackOnError(t *testing.T) {
 	uow := unitofwork.New(newDB(t))
 	boom := errors.New("boom")
 
-	m1, err := domain.NewModel("openai", "gpt-5.5")
+	m1, err := domain.NewModel(domain.ClientPi, "openai", "gpt-5.5")
 	if err != nil {
 		t.Fatalf("domain.NewModel: %v", err)
 	}

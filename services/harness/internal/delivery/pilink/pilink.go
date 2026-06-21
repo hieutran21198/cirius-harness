@@ -85,7 +85,9 @@ type ModelRef struct {
 type ModelsReq struct {
 	Type string `json:"type"`
 	ID   string `json:"id,omitempty"`
-	// Client identifies the reporting client (e.g. "pi"), for diagnostics.
+	// Client identifies the reporting client (e.g. "pi", "opencode"). Model names are
+	// client-specific, so it is part of each entry's catalog identity (ADR-0015) and
+	// is required, not just diagnostic.
 	Client string `json:"client,omitempty"`
 	// Models is the client's enabled (provider, slug) set.
 	Models []ModelRef `json:"models"`

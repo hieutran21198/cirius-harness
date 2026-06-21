@@ -14,9 +14,11 @@ type ModelID string
 
 // Model is the aggregate root describing one entry in the model catalog. Agents
 // reference models by id rather than embedding the "provider/slug" string; which
-// model plays an agent's role is bound per session.
+// model plays an agent's role is bound per session. A model is scoped to the client
+// that reported it — model names are client-specific (ADR-0015).
 type Model struct {
 	id       ModelID
+	client   ClientKind
 	provider string
 	slug     string
 	enabled  bool
@@ -25,25 +27,25 @@ type Model struct {
 // NewModel assembles a fresh catalog entry from its natural key, minting its own
 // identity (UUID v7), enabled by default, and validates it. The app supplies only the
 // business attributes and reads the id back from the aggregate when it needs it.
-func NewModel(provider, slug string) (Model, error) {
-	m := Model{id: newID[ModelID](), provider: provider, slug: slug, enabled: true}
+func NewModel(client ClientKind, provider, slug string) (Model, error) {
+	m := Model{id: newID[ModelID](), client: client, provider: provider, slug: slug, enabled: true}
 	return m, m.Validate()
 }
 
 // RehydrateModel reconstitutes a Model from its persisted state (the repository's
 // inbound constructor): it takes every stored field as-is — no creation defaults —
 // and validates structural integrity.
-func RehydrateModel(id ModelID, provider, slug string, enabled bool) (Model, error) {
-	m := Model{id: id, provider: provider, slug: slug, enabled: enabled}
+func RehydrateModel(id ModelID, client ClientKind, provider, slug string, enabled bool) (Model, error) {
+	m := Model{id: id, client: client, provider: provider, slug: slug, enabled: enabled}
 	return m, m.Validate()
 }
 
-// Reference is the model's natural key (provider, slug) — the value other contexts
-// use to refer to it without depending on its identity.
-func (m Model) Reference() Ref { return Ref{Provider: m.provider, Slug: m.slug} }
+// Reference is the model's natural key (client, provider, slug) — the value other
+// contexts use to refer to it without depending on its identity.
+func (m Model) Reference() Ref { return Ref{Client: m.client, Provider: m.provider, Slug: m.slug} }
 
-// String is the canonical "provider/slug" display form.
-func (m Model) String() string { return m.provider + "/" + m.slug }
+// String is the canonical "client:provider/slug" display form.
+func (m Model) String() string { return string(m.client) + ":" + m.provider + "/" + m.slug }
 
 // ModelSnapshot is the persistence grouped view of a Model: its whole state,
 // grouped for storage and reconstitution. It is the only way a Model's state
@@ -51,6 +53,7 @@ func (m Model) String() string { return m.provider + "/" + m.slug }
 // its fields back.
 type ModelSnapshot struct {
 	ID       ModelID
+	Client   ClientKind
 	Provider string
 	Slug     string
 	Enabled  bool
@@ -58,13 +61,16 @@ type ModelSnapshot struct {
 
 // Snapshot returns the model's persistence view.
 func (m Model) Snapshot() ModelSnapshot {
-	return ModelSnapshot{ID: m.id, Provider: m.provider, Slug: m.slug, Enabled: m.enabled}
+	return ModelSnapshot{ID: m.id, Client: m.client, Provider: m.provider, Slug: m.slug, Enabled: m.enabled}
 }
 
 // Validate checks the model's invariants.
 func (m Model) Validate() error {
 	if m.id == "" {
 		return fmt.Errorf("%w: id is required", ErrInvalidModel)
+	}
+	if !m.client.Valid() {
+		return fmt.Errorf("%w: unknown client %q", ErrInvalidModel, m.client)
 	}
 	if m.provider == "" {
 		return fmt.Errorf("%w: provider is required", ErrInvalidModel)

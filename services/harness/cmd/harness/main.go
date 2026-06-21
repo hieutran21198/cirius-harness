@@ -136,16 +136,20 @@ func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyR
 // reported refs into domain models, drives the application handler, and maps the
 // result back to the wire. No business logic lives here (ADR-0004, ADR-0012).
 func (h *handler) SyncModels(ctx context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
+	// The client is frame-level (one frame is one client's report) and part of every
+	// reported model's catalog identity, so it must be a known client.
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return pilink.ModelsSyncedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
 	reported := make([]domain.Ref, len(req.Models))
 	for i, ref := range req.Models {
-		reported[i] = domain.Ref{Provider: ref.Provider, Slug: ref.Slug}
+		reported[i] = domain.Ref{Client: client, Provider: ref.Provider, Slug: ref.Slug}
 	}
 	res, err := h.app.Commands.SyncModels.Handle(ctx, command.SyncModels{Reported: reported})
 	if err != nil {
 		return pilink.ModelsSyncedResp{}, err
 	}
-	if req.Client != "" {
-		fmt.Fprintf(os.Stderr, "harness: synced models from %s (added=%d, total=%d)\n", req.Client, res.Added, res.Total)
-	}
+	fmt.Fprintf(os.Stderr, "harness: synced models from %s (added=%d, total=%d)\n", client, res.Added, res.Total)
 	return pilink.ModelsSyncedResp{Added: res.Added, Total: res.Total}, nil
 }
