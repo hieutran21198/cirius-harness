@@ -39,8 +39,10 @@ and grouped views, not public Go fields ([ADR-0014](../adr/0014-domain-encapsula
 - `Tool` aggregate (ID, Name, Description) — the capability **catalog**
   (read | grep | glob | list | edit | bash | webfetch | websearch), `domain.Tool`.
   (`domain.ToolReader`/`Writer` added when a use case needs it.)
-- `Model` aggregate (ID, Provider, Slug, Enabled) — the first-class catalog of available
-  provider/model-ids (`Slug` is the provider's model name), `domain.Model`. Persisted via
+- `Model` aggregate (ID, Client, Provider, Slug, Enabled) — the first-class catalog of available
+  provider/model-ids (`Slug` is the provider's model name); `Client` is the reporting client and
+  part of the natural key, since model names are client-specific
+  ([ADR-0015](../adr/0015-client-aware-model-catalog.md)). `domain.Model`. Persisted via
   `domain.ModelWriter` through `command.UnitOfWork` →
   `infra/sqlite/{unitofwork,repo}`. Which model an agent uses is bound **per session** (see `Member.ModelID`),
   not stored on the agent.
@@ -74,6 +76,7 @@ attributes, and references travel by UUID id ([ADR-0005](../adr/0005-surrogate-u
 erDiagram
     models {
         TEXT    id       PK
+        TEXT    client       "reporting client (part of natural key)"
         TEXT    provider
         TEXT    slug         "provider model name"
         INTEGER enabled
@@ -177,8 +180,10 @@ There is no production history yet, so the initial schema is a single `…_initi
   `domain.ModelWriter`); the rest
   (agents/sessions/projects/…) and the whole read side are deferred.
 - The **`models` catalog is client-reported**, not seeded: a client syncs its enabled models
-  in at session start and the catalog is a global cumulative union
-  ([ADR-0011](../adr/0011-client-reported-model-catalog.md)). The original model seed was
+  in at session start and the catalog is a cumulative union, keyed **per client**
+  `(client, provider, slug)` since model names are client-specific
+  ([ADR-0011](../adr/0011-client-reported-model-catalog.md),
+  [ADR-0015](../adr/0015-client-aware-model-catalog.md)). The original model seed was
   removed by `…_remove_model_seed.sql`.
 - The **seed migration** still normalizes `.cirius-harness/00-system.yaml` into the `tools`
   catalog, the `agents` (roles), and their `agent_tools` grants. The per-agent **model** lines

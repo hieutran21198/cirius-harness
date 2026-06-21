@@ -5,6 +5,8 @@
 - **Deciders**: hieu
 - **Supersedes**: -
 - **Superseded by**: -
+- **Refined by**: [ADR-0015](0015-client-aware-model-catalog.md) (the catalog key gains `client`;
+  it is no longer client-agnostic — client-reported and cumulative still stand)
 
 ## Context
 

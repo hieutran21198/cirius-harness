@@ -33,7 +33,7 @@ sets and the harness echoes on the reply (so a client can correlate request↔re
 | out | `ready` | handshake accepted (`schemaVersion`, `dbPath`, `pid`) |
 | in  | `ping` | liveness probe |
 | out | `pong` | reply to ping |
-| in  | `models` | client reports its enabled models (`client`, `models: [{provider, slug}]`) — synced into the catalog ([ADR-0011](../adr/0011-client-reported-model-catalog.md)) |
+| in  | `models` | client reports its enabled models (`client` **required**, `models: [{provider, slug}]`) — synced into the catalog keyed per-client `(client, provider, slug)` ([ADR-0011](../adr/0011-client-reported-model-catalog.md), [ADR-0015](../adr/0015-client-aware-model-catalog.md)); an unknown/missing `client` is an `error` frame |
 | out | `models_synced` | sync result (`added`, `total`) |
 | out | `error` | a frame could not be handled (`message`) |
 

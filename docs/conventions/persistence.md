@@ -23,9 +23,12 @@ Data, repository, and migration rules for every Go service that stores state. De
   the aggregate's whole graph (e.g. a session writer persists a session and its members
   together; an agent writer persists an agent and its tool grants). Methods are sized to the
   use case — `domain.ModelWriter` batches: `SaveAll` upserts many at once, `Existing(refs)` does
-  a targeted lookup (a `(provider, slug)` tuple `IN` over the reported `domain.Ref`s, keyed by
-  the comparable `Ref`) for a membership check before the batch — its cost scales with the
-  request, not the catalog. Add a Reader/Writer when a use case needs it, not speculatively.
+  a targeted lookup (a `(client, provider, slug)` tuple `IN` over the reported `domain.Ref`s,
+  keyed by the comparable `Ref`) for a membership check before the batch — its cost scales with
+  the request, not the catalog. The catalog's natural key is `(client, provider, slug)`: model
+  names are client-specific, so the client is part of identity
+  ([ADR-0015](../adr/0015-client-aware-model-catalog.md)). Add a Reader/Writer when a use case
+  needs it, not speculatively.
 - **Cross-aggregate references are by the UUID id**, not embedded structs and not the natural
   key — e.g. a session member's agent id and model id, a session's project id, a worktree's
   project id, a container's project id

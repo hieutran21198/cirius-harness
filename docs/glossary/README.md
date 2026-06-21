@@ -43,8 +43,14 @@ The team definition — *who can work* — independent of any running session.
   ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). Type: `domain.Agent`
   (`services/harness/internal/domain`).
 - **Model** — a provider/model-id in the first-class catalog (e.g. `anthropic/claude-opus-4-7`,
-  stored as provider + `slug`), referenced by id from a session membership. Type: `domain.Model`
+  stored as `client` + provider + `slug`), referenced by id from a session membership. Model
+  names are **client-specific**, so the natural key is `(client, provider, slug)`
+  ([ADR-0015](../adr/0015-client-aware-model-catalog.md)). Type: `domain.Model`
   (`services/harness/internal/domain`).
+- **Client** (a.k.a. **citizen**) — the AI coding client the harness governs, paired 1:1 with its
+  own child-harness ([ADR-0009](../adr/0009-deployment-topology-per-client-harness.md)); e.g.
+  `pi`, `opencode`. It reports its enabled models, named in its own registry's vocabulary. Type:
+  `domain.ClientKind`.
 - **Archetype** — an agent's purpose-level operating style: `communicator`,
   `principle-driven`, `utility-runner`, or `none` (model-less). Maps to a model family
   (see [research](../research/model-families.md)). Type: `domain.Archetype`.
