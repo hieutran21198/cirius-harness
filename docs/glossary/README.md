@@ -62,18 +62,28 @@ The team definition — *who can work* — independent of any running session.
   ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). Type: `domain.Agent`
   (`services/harness/internal/domain`).
 - **Persona** — an agent's harness-owned behaviour, modelled as a **structured profile** (identity,
-  mission, effort-scaling rule, fixed output sections, delegation roster) that renders to the
+  mission, principles, fixed output sections, boundaries, effort-scaling rule) that renders to the
   **system prompt** the control plane hands the client to run a turn as that agent (e.g. council
-  weighing a request into a strategy plan). It is harness-owned **code** — a `domain.Persona`
-  constant resolved by name via `domain.PersonaFor`, **not** stored in the DB or workspace config.
-  Optional (most agents have none); distinct from the **model** (bound per session) and
-  **permissions** (Casbin). Resolved over the `resolve_agent` frame and run as a one-shot governed
-  turn ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md)). Type:
-  `domain.Persona` (an interface; `services/harness/internal/domain`).
+  weighing a request into a strategy plan; the implementer executing a task in-role). It is
+  harness-owned **code** — a `domain.Persona` value resolved by name via `domain.PersonaFor`,
+  **not** stored in the DB or workspace config. Every **working** agent has one; only the
+  model-less `prayer` (archetype `none`) has none. The prompt's *style* follows the agent's
+  **archetype** (communicator → checklisted; principle-driven → concise principles; utility-runner
+  → terse). Distinct from the **model** (bound per session) and **permissions** (Casbin). Resolved
+  over the `resolve_agent` frame and run as a one-shot governed turn
+  ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md),
+  [ADR-0020](../adr/0020-specialist-agent-personas.md)). Type: `domain.Persona` (an interface;
+  `services/harness/internal/domain`).
 - **Council profile** — council's persona: a typed **orchestration model** (intents, the 7 task
   dimensions, the category taxonomy, the agent-capability roster, routing rules, the flow pipeline,
   quality gates, and the assignment factors) rendered to council's system prompt
   ([ADR-0017](../adr/0017-council-orchestration-model.md)). Type: `domain.CouncilProfile`.
+- **Agent profile** — the shared persona for the working specialists (planner, implementer,
+  researcher, explorer, reviewer, scribe): identity, mission, principles, fixed output sections,
+  boundaries, and an effort-scaling rule, rendered to a system prompt in the style its **archetype**
+  dictates (communicator → checklisted; principle-driven → concise principles; utility-runner →
+  terse). Implements `domain.Persona`; the specialist counterpart to council's richer **Council
+  profile** ([ADR-0020](../adr/0020-specialist-agent-personas.md)). Type: `domain.AgentProfile`.
 - **Category** — a kind of work a task falls into (explore, research, architect, plan, implement,
   test, review, security, performance, docs, migration, devops, integrate). Richer than the team;
   council routes several categories onto one agent ([PDR-0002](../pdr/0002-agent-team-composition.md)).
