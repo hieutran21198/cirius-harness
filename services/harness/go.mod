@@ -5,6 +5,7 @@ go 1.26.3
 require (
 	github.com/casbin/casbin/v3 v3.8.1
 	github.com/google/uuid v1.6.0
+	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.31.1
 )
 

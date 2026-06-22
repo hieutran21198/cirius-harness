@@ -9,6 +9,7 @@ import (
 	"log/slog"
 
 	"harness-workspace/services/harness/internal/app/command"
+	"harness-workspace/services/harness/internal/app/query"
 )
 
 // Application is the use-case entrypoint: the set of command and query handlers.
@@ -19,17 +20,26 @@ type Application struct {
 
 // Commands groups the write-side use cases.
 type Commands struct {
-	SyncModels command.SyncModelsHandler
+	SyncModels     command.SyncModelsHandler
+	StartSession   command.StartSessionHandler
+	RecordAgentRun command.RecordAgentRunHandler
 }
 
-// Queries groups the read-side use cases (none yet).
-type Queries struct{}
+// Queries groups the read-side use cases.
+type Queries struct {
+	ResolveAgent query.ResolveAgentHandler
+}
 
 // New wires the application's handlers over the given driven ports.
-func New(uow command.UnitOfWork, logger *slog.Logger) Application {
+func New(uow command.UnitOfWork, rs query.ReadStore, logger *slog.Logger) Application {
 	return Application{
 		Commands: Commands{
-			SyncModels: command.NewSyncModelsHandler(uow, logger),
+			SyncModels:     command.NewSyncModelsHandler(uow, logger),
+			StartSession:   command.NewStartSessionHandler(uow, logger),
+			RecordAgentRun: command.NewRecordAgentRunHandler(uow, logger),
+		},
+		Queries: Queries{
+			ResolveAgent: query.NewResolveAgentHandler(rs, logger),
 		},
 	}
 }

@@ -18,6 +18,14 @@ See [ADR-0001](../adr/0001-harness-layout.md) for the full pipeline.
 - Tool evaluations — what a tool does well, its limits, when to reach for it.
 - Client evaluations — capabilities and control surface of clients (opencode, …).
 
+## Index
+
+- [model-families.md](model-families.md) — Claude-family vs GPT-family prompt-style fit.
+- [agent-orchestration.md](agent-orchestration.md) — orchestrator-worker / plan-and-execute,
+  capability routing, task DAGs, four-gate HITL; the evidence behind council's orchestration model.
+- [agent-team-composition.md](agent-team-composition.md) — how many agents (lean wins); the evidence
+  behind keeping 8 agents + lenses (PDR-0002).
+
 ## What does NOT belong here
 
 - **Decisions.** "We will use model X for agent Y" is a [PDR](../pdr/README.md), and it

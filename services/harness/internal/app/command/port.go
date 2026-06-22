@@ -14,6 +14,9 @@ import (
 // Inside DoTx they are bound to the open transaction.
 type TransactionalUnitOfWork interface {
 	Models() domain.ModelWriter
+	Events() domain.EventWriter
+	Projects() domain.ProjectWriter
+	Sessions() domain.SessionWriter
 }
 
 // UnitOfWork is a TransactionalUnitOfWork whose writers autocommit per call, and

@@ -51,6 +51,12 @@ func newFakeUoW() *fakeUoW { return &fakeUoW{w: &fakeWriter{byRef: map[domain.Re
 
 func (u *fakeUoW) Models() domain.ModelWriter { return u.w }
 
+// The audit/session writers are unused by the model-sync tests; a nil Events writer
+// makes ApplyCommandDecorators skip the audit layer.
+func (u *fakeUoW) Events() domain.EventWriter     { return nil }
+func (u *fakeUoW) Projects() domain.ProjectWriter { return nil }
+func (u *fakeUoW) Sessions() domain.SessionWriter { return nil }
+
 func (u *fakeUoW) DoTx(ctx context.Context, fn func(context.Context, command.TransactionalUnitOfWork) error) error {
 	return fn(ctx, u)
 }

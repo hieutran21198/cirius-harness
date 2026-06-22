@@ -10,9 +10,10 @@ import (
 	"harness-workspace/services/harness/internal/delivery/pilink"
 )
 
-// stubHandler records the SyncModels request and returns canned replies.
+// stubHandler records the inbound requests and returns canned replies.
 type stubHandler struct {
 	gotModels pilink.ModelsReq
+	gotAgent  pilink.ResolveAgentReq
 }
 
 func (s *stubHandler) Hello(_ context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
@@ -22,6 +23,11 @@ func (s *stubHandler) Hello(_ context.Context, req pilink.HelloReq) (pilink.Read
 func (s *stubHandler) SyncModels(_ context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
 	s.gotModels = req
 	return pilink.ModelsSyncedResp{Added: len(req.Models), Total: len(req.Models)}, nil
+}
+
+func (s *stubHandler) ResolveAgent(_ context.Context, req pilink.ResolveAgentReq) (pilink.AgentResolvedResp, error) {
+	s.gotAgent = req
+	return pilink.AgentResolvedResp{Name: req.Agent, Persona: "weigh and plan"}, nil
 }
 
 // decodeLines reads NDJSON frames from out into generic maps.
@@ -49,7 +55,7 @@ func TestServeRoutesModels(t *testing.T) {
 			`{"type":"models","id":"m1","client":"pi","models":[{"provider":"anthropic","slug":"claude-opus-4-8"},{"provider":"openai","slug":"gpt-5.5"}]}` + "\n",
 	)
 	var out strings.Builder
-	if err := pilink.Serve(context.Background(), in, &out, h); err != nil {
+	if err := pilink.Serve(context.Background(), in, &out, h, nil); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
 
@@ -79,10 +85,36 @@ func TestServeRoutesModels(t *testing.T) {
 	}
 }
 
+func TestServeRoutesResolveAgent(t *testing.T) {
+	h := &stubHandler{}
+	in := strings.NewReader(
+		`{"type":"resolve_agent","id":"a1","agent":"council","client":"pi"}` + "\n",
+	)
+	var out strings.Builder
+	if err := pilink.Serve(context.Background(), in, &out, h, nil); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	frames := decodeLines(t, out.String())
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1: %v", len(frames), frames)
+	}
+	ar := frames[0]
+	if ar["type"] != "agent_resolved" || ar["id"] != "a1" {
+		t.Fatalf("frame = %v, want agent_resolved/a1", ar)
+	}
+	if ar["name"] != "council" || ar["persona"] != "weigh and plan" {
+		t.Fatalf("agent_resolved = %v, want council persona", ar)
+	}
+	if h.gotAgent.Agent != "council" || h.gotAgent.Client != "pi" {
+		t.Fatalf("handler got %+v, want agent=council client=pi", h.gotAgent)
+	}
+}
+
 func TestServeUnknownType(t *testing.T) {
 	in := strings.NewReader(`{"type":"nope","id":"x"}` + "\n")
 	var out strings.Builder
-	if err := pilink.Serve(context.Background(), in, &out, &stubHandler{}); err != nil {
+	if err := pilink.Serve(context.Background(), in, &out, &stubHandler{}, nil); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
 	frames := decodeLines(t, out.String())

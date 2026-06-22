@@ -26,6 +26,15 @@ func New(db *gorm.DB) *UnitOfWork { return &UnitOfWork{db: db} }
 // Models returns the model catalog writer bound to this unit of work's handle.
 func (u *UnitOfWork) Models() domain.ModelWriter { return repo.NewModelWriter(u.db) }
 
+// Events returns the audit-log writer bound to this unit of work's handle.
+func (u *UnitOfWork) Events() domain.EventWriter { return repo.NewEventWriter(u.db) }
+
+// Projects returns the project writer bound to this unit of work's handle.
+func (u *UnitOfWork) Projects() domain.ProjectWriter { return repo.NewProjectWriter(u.db) }
+
+// Sessions returns the session writer bound to this unit of work's handle.
+func (u *UnitOfWork) Sessions() domain.SessionWriter { return repo.NewSessionWriter(u.db) }
+
 // DoTx runs fn inside one transaction: every writer obtained from the txU shares
 // it, committing on nil and rolling back on error (or panic).
 func (u *UnitOfWork) DoTx(ctx context.Context, fn func(ctx context.Context, tx command.TransactionalUnitOfWork) error) error {

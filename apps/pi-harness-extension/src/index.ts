@@ -8,9 +8,14 @@
  * one harness process.
  *
  * Slice 1: connect + model sync. The harness learns which models exist from the
- * client (ADR-0011) rather than shipping a hardcoded list. Governance (model
- * handoff, permission gating, tool grants) and session create/resume come later
- * over this same channel.
+ * client (ADR-0011) rather than shipping a hardcoded list.
+ *
+ * Governance, first slice: the `/council` command (ADR-0016). The harness governs
+ * (resolves the council agent's persona); Pi executes (runs one turn under it). The
+ * command asks the harness to resolve council, then drives a single turn — it sets a
+ * one-shot flag and sends the user's message; a `before_agent_start` hook swaps in the
+ * council persona for that turn only, then reverts. The harness never calls a model
+ * (AGENTS.md) — it only says who council is. Model/permission governance come later.
  *
  * Framing note: the harness speaks strict LF-delimited JSON. We split child stdout
  * on "\n" by hand and never use Node `readline`, which also breaks on U+2028/U+2029
@@ -20,7 +25,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "harness";
 const BINARY_REL = ".cirius-harness/bin/harness";
@@ -37,11 +46,28 @@ interface ModelsSyncedResp {
 	total: number;
 }
 
+interface AgentResolvedResp {
+	name: string;
+	persona: string;
+	model?: string;
+}
+
+// A harness request function bound to one child's stdio (id-correlated reply/timeout).
+type RequestFn = <T>(frame: Record<string, unknown>) => Promise<T>;
+
 export default function (pi: ExtensionAPI) {
 	// At most one harness child per session. Tracked at module scope so
 	// session_shutdown (and a re-fired session_start on /reload, /new, /resume)
 	// can tear it down idempotently.
 	let child: ChildProcess | undefined;
+	// The request fn for the live child, published for the command handlers (which are
+	// registered once at factory scope, outside session_start). Cleared on teardown.
+	let harnessRequest: RequestFn | undefined;
+
+	// Council one-shot turn state: the command arms these, the before_agent_start hook
+	// consumes them for exactly one turn (ADR-0016).
+	let councilPending = false;
+	let councilPersona = "";
 
 	const setStatus = (ctx: ExtensionContext, text: string | undefined) => {
 		if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, text);
@@ -53,6 +79,7 @@ export default function (pi: ExtensionAPI) {
 	const teardown = () => {
 		const c = child;
 		child = undefined;
+		harnessRequest = undefined;
 		if (!c) return;
 		try {
 			c.stdin?.end();
@@ -164,6 +191,9 @@ export default function (pi: ExtensionAPI) {
 			});
 		};
 
+		// Publish this child's request fn for the command handlers (e.g. /council).
+		harnessRequest = request;
+
 		try {
 			const ready = await request<ReadyResp>({ type: "hello", cwd: ctx.cwd, pid: process.pid });
 			if (child !== proc) return; // session changed while we waited
@@ -187,6 +217,46 @@ export default function (pi: ExtensionAPI) {
 			setStatus(ctx, undefined);
 			notify(ctx, `harness: handshake failed (${(err as Error).message})`, "error");
 		}
+	});
+
+	// /council: weigh the request, produce a strategy plan. The harness resolves the
+	// council agent's persona; we run one turn under it (ADR-0016). Registered once at
+	// factory scope — the before_agent_start hook below must not be re-added per session.
+	pi.registerCommand("council", {
+		description: "Weigh the request and produce a strategy plan (harness council agent).",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const message = args.trim();
+			if (!message) {
+				notify(ctx, "usage: /council <what you want planned>", "error");
+				return;
+			}
+			if (!harnessRequest) {
+				notify(ctx, "harness: not connected — cannot resolve council", "error");
+				return;
+			}
+			let resolved: AgentResolvedResp;
+			try {
+				resolved = await harnessRequest<AgentResolvedResp>({
+					type: "resolve_agent",
+					agent: "council",
+					client: "pi",
+				});
+			} catch (err) {
+				notify(ctx, `harness: council resolve failed (${(err as Error).message})`, "error");
+				return;
+			}
+			// Arm the one-shot persona, then trigger the turn. before_agent_start swaps the
+			// system prompt for this turn only; the next turn reverts to the default.
+			councilPersona = resolved.persona;
+			councilPending = true;
+			pi.sendUserMessage(message);
+		},
+	});
+
+	pi.on("before_agent_start", () => {
+		if (!councilPending) return undefined;
+		councilPending = false; // one-shot — only the /council turn runs as council
+		return { systemPrompt: councilPersona };
 	});
 
 	pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {

@@ -28,7 +28,7 @@ func discardLogger() *slog.Logger {
 
 func TestApplyCommandDecoratorsDelegatesResult(t *testing.T) {
 	base := &stubHandler{result: "ok"}
-	h := decorator.ApplyCommandDecorators(base, discardLogger())
+	h := decorator.ApplyCommandDecorators(base, discardLogger(), nil)
 
 	got, err := h.Handle(context.Background(), "ping")
 	if err != nil {
@@ -44,7 +44,7 @@ func TestApplyCommandDecoratorsDelegatesResult(t *testing.T) {
 
 func TestApplyCommandDecoratorsDelegatesError(t *testing.T) {
 	want := errors.New("boom")
-	h := decorator.ApplyCommandDecorators(&stubHandler{err: want}, discardLogger())
+	h := decorator.ApplyCommandDecorators(&stubHandler{err: want}, discardLogger(), nil)
 
 	if _, err := h.Handle(context.Background(), "ping"); !errors.Is(err, want) {
 		t.Fatalf("got %v, want %v", err, want)

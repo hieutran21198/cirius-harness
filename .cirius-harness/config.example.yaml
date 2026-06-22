@@ -20,6 +20,11 @@
 # differ in kind (scalar vs map) the overlay wins wholesale. An unknown client key is an error.
 version: 1
 
+# Logging — override the system default (info). Per-session logs are written to
+# .cirius-harness/state/logging/<session_id>.log.
+# logging:
+#   level: debug # debug | info | warn | error
+
 agents:
   # GPT-led executor: the openai model is named differently per client -> use a map.
   implementer:

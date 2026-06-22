@@ -53,3 +53,17 @@ func (p Project) Validate() error {
 	}
 	return nil
 }
+
+// ProjectSnapshot is the persistence grouped view of a Project.
+type ProjectSnapshot struct {
+	ID          ProjectID
+	Name        string
+	RootPath    string
+	Kind        Kind
+	Description string
+}
+
+// Snapshot returns the project's persistence view.
+func (p Project) Snapshot() ProjectSnapshot {
+	return ProjectSnapshot{ID: p.id, Name: p.name, RootPath: p.rootPath, Kind: p.kind, Description: p.description}
+}

@@ -31,11 +31,20 @@ and grouped views, not public Go fields ([ADR-0014](../adr/0014-domain-encapsula
 **agent** — the declarative team, as **roles** bound to models at session time
 ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)):
 
-- `Agent` aggregate (ID, Name, Archetype, Responsibility, Description, Source, Enabled, ToolIDs)
-  — a pure **role**; it carries **no model** and no fallbacks. `ToolIDs` are grants into the
-  tool catalog (persisted via `agent_tools`). Typed-string enums `Archetype`
-  (communicator | principle-driven | utility-runner | none) and `Source` (system | user).
-  (`domain.AgentReader`/`Writer` added when a use case needs it.)
+- `Agent` aggregate (ID, Name, Archetype, Responsibility, Description, Source, Enabled,
+  ToolIDs) — a pure **role**; it carries **no model** and no fallbacks. An agent's **persona**
+  (its harness-owned system prompt) is **not** stored here — it is harness-owned *code*, a
+  `domain.Persona` resolved by name via `domain.PersonaFor` and rendered to a prompt, distinct from
+  the model (per session) and permissions (Casbin)
+  ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md)). Council's persona is a
+  typed **orchestration model** (`domain.CouncilProfile`) that renders to its prompt and defines the
+  machine-readable `OrchestrationPlan` it emits ([ADR-0017](../adr/0017-council-orchestration-model.md));
+  still not persisted.
+  `ToolIDs` are grants into the tool catalog (persisted via `agent_tools`). Typed-string enums
+  `Archetype` (communicator | principle-driven | utility-runner | none) and `Source`
+  (system | user). `domain.AgentReader` exists (read by name via `query.ReadStore` →
+  `infra/sqlite/readstore`, serving the `ResolveAgent` query's exists/enabled check); `Writer`
+  added when a use case needs it.
 - `Tool` aggregate (ID, Name, Description) — the capability **catalog**
   (read | grep | glob | list | edit | bash | webfetch | websearch), `domain.Tool`.
   (`domain.ToolReader`/`Writer` added when a use case needs it.)
@@ -69,6 +78,11 @@ attributes, and references travel by UUID id ([ADR-0005](../adr/0005-surrogate-u
   unset); it has no FK and is validated in the domain.
 - `Member` (ID, AgentID, ModelID) — the agent↔session join (`session_agents`); `ModelID` is
   the model that agent ran with (empty for model-less `prayer`).
+- `Event` (ID, OccurredAt, Kind, Actor, Status, Message, Detail) — one row of the **append-only
+  audit log** (`events` table), written through a command audit decorator: what happened, who
+  caused it, and how it ended. Standalone (no FK); distinct from the ephemeral stderr logs and
+  from scribe's distilled lessons. Persisted via `domain.EventWriter`
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
 
 ### Schema (SQLite)
 
@@ -136,6 +150,15 @@ erDiagram
         TEXT agent_id   FK
         TEXT model_id   FK "model this agent ran with; null for prayer"
     }
+    events {
+        TEXT     id          PK
+        DATETIME occurred_at
+        TEXT     kind        "command name / what happened"
+        TEXT     actor       "who caused it (client); '' if unknown"
+        TEXT     status      "ok | error"
+        TEXT     message
+        TEXT     detail      "optional JSON"
+    }
 
     agents    ||--o{ agent_tools    : "granted"
     tools     ||--o{ agent_tools    : ""
@@ -176,9 +199,15 @@ There is no production history yet, so the initial schema is a single `…_initi
 
 - GORM **driven adapters** in `internal/infra` implementing the domain `Writer`/`Reader`
   interfaces via a `UnitOfWork`/`ReadStore` ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
-  — the first exists (`infra/sqlite/unitofwork` + `infra/sqlite/repo`: `command.UnitOfWork` +
-  `domain.ModelWriter`); the rest
-  (agents/sessions/projects/…) and the whole read side are deferred.
+  — the write side exposes `domain.ModelWriter`, `EventWriter`, `ProjectWriter`, and
+  `SessionWriter` on `command.UnitOfWork` (`infra/sqlite/unitofwork` + `infra/sqlite/repo`): the
+  harness records the audit log, the project, the session, and each agent run
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)). The read side has its
+  first reader (`infra/sqlite/readstore` + `infra/sqlite/repo`: `query.ReadStore` +
+  `domain.AgentReader`, serving `ResolveAgent`'s exists/enabled check — the persona itself is a
+  `domain.Persona` constant, not read from a column
+  ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md))); the remaining read sides
+  (model catalog, session/project queries) are deferred.
 - The **`models` catalog is client-reported**, not seeded: a client syncs its enabled models
   in at session start and the catalog is a cumulative union, keyed **per client**
   `(client, provider, slug)` since model names are client-specific

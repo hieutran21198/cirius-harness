@@ -17,6 +17,9 @@ func TestNewAgent(t *testing.T) {
 	if a.id == "" || a.name != "scout" {
 		t.Fatalf("NewAgent = %+v, want minted id + name=scout", a)
 	}
+	if snap := a.Snapshot(); snap.Name != "scout" || snap.Responsibility != "explore the code" {
+		t.Fatalf("Snapshot = %+v, want fields carried through", snap)
+	}
 }
 
 func TestNewAgentInvalid(t *testing.T) {

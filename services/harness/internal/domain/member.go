@@ -40,3 +40,15 @@ func (m Member) Validate() error {
 	}
 	return nil
 }
+
+// MemberSnapshot is the persistence grouped view of a Member.
+type MemberSnapshot struct {
+	ID      MemberID
+	AgentID AgentID
+	ModelID ModelID
+}
+
+// Snapshot returns the member's persistence view.
+func (m Member) Snapshot() MemberSnapshot {
+	return MemberSnapshot{ID: m.id, AgentID: m.agentID, ModelID: m.modelID}
+}

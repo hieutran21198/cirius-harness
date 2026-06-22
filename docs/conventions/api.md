@@ -35,6 +35,8 @@ sets and the harness echoes on the reply (so a client can correlate request↔re
 | out | `pong` | reply to ping |
 | in  | `models` | client reports its enabled models (`client` **required**, `models: [{provider, slug}]`) — synced into the catalog keyed per-client `(client, provider, slug)` ([ADR-0011](../adr/0011-client-reported-model-catalog.md), [ADR-0015](../adr/0015-client-aware-model-catalog.md)); an unknown/missing `client` is an `error` frame |
 | out | `models_synced` | sync result (`added`, `total`) |
+| in  | `resolve_agent` | client asks the harness to resolve an agent (`agent`, `client`) so it can govern a turn as that agent ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md)); an unknown/missing `client` or unknown `agent` is an `error` frame |
+| out | `agent_resolved` | resolved agent (`name`, `persona`; `model` empty until the resolver milestone) |
 | out | `error` | a frame could not be handled (`message`) |
 
 New frames are additive (same rule as cmd output). The Go contract lives in

@@ -94,3 +94,37 @@ func (s Session) Validate() error {
 	}
 	return nil
 }
+
+// SessionSnapshot is the persistence grouped view of a Session and its members.
+type SessionSnapshot struct {
+	ID        SessionID
+	ProjectID ProjectID
+	EnvType   EnvType
+	EnvID     string
+	Title     string
+	Status    SessionStatus
+	CreatedAt time.Time
+	StartedAt *time.Time
+	EndedAt   *time.Time
+	Members   []MemberSnapshot
+}
+
+// Snapshot returns the session's persistence view, including its members.
+func (s Session) Snapshot() SessionSnapshot {
+	members := make([]MemberSnapshot, len(s.members))
+	for i, m := range s.members {
+		members[i] = m.Snapshot()
+	}
+	return SessionSnapshot{
+		ID:        s.id,
+		ProjectID: s.projectID,
+		EnvType:   s.envType,
+		EnvID:     s.envID,
+		Title:     s.title,
+		Status:    s.status,
+		CreatedAt: s.createdAt,
+		StartedAt: s.startedAt,
+		EndedAt:   s.endedAt,
+		Members:   members,
+	}
+}

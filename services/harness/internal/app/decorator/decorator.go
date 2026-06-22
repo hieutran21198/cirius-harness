@@ -12,6 +12,8 @@ package decorator
 import (
 	"context"
 	"log/slog"
+
+	"harness-workspace/services/harness/internal/domain"
 )
 
 // CommandHandler executes a state-changing use case. Unlike canonical CQRS
@@ -27,10 +29,16 @@ type QueryHandler[Q, R any] interface {
 	Handle(ctx context.Context, q Q) (R, error)
 }
 
-// ApplyCommandDecorators wraps a command handler with the cross-cutting concerns
-// (logging today). The nesting order is outermost-first: logging → base handler.
-func ApplyCommandDecorators[C, R any](handler CommandHandler[C, R], logger *slog.Logger) CommandHandler[C, R] {
-	return commandLoggingDecorator[C, R]{base: handler, logger: logger}
+// ApplyCommandDecorators wraps a command handler with the cross-cutting concerns:
+// audit (persisted, when an EventWriter is given) then logging (ephemeral). The nesting
+// is outermost-first — logging → audit → base handler — so logging brackets the audit
+// write too. A nil events writer skips the audit layer (e.g. in tests).
+func ApplyCommandDecorators[C, R any](handler CommandHandler[C, R], logger *slog.Logger, events domain.EventWriter) CommandHandler[C, R] {
+	wrapped := handler
+	if events != nil {
+		wrapped = commandAuditDecorator[C, R]{base: handler, events: events, logger: logger}
+	}
+	return commandLoggingDecorator[C, R]{base: wrapped, logger: logger}
 }
 
 // ApplyQueryDecorators wraps a query handler with the cross-cutting concerns.

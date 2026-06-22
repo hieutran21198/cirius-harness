@@ -19,6 +19,11 @@
 # explorer,lib or quick task only; m3 > m2.7 > m2.5)
 version: 1
 
+# Logging — the system default. Override the level in the user overlay (config.yaml).
+# Per-session logs are written to .cirius-harness/state/logging/<session_id>.log.
+logging:
+  level: info # debug | info | warn | error
+
 fallbacks:
   enabled: true
   on: ["error", "ratelimit", "budget", "quota"]

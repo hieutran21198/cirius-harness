@@ -39,7 +39,7 @@ func NewSyncModelsHandler(uow UnitOfWork, logger *slog.Logger) SyncModelsHandler
 	if uow == nil {
 		panic("command: nil unit of work")
 	}
-	return decorator.ApplyCommandDecorators(syncModelsHandler{uow: uow}, logger)
+	return decorator.ApplyCommandDecorators(syncModelsHandler{uow: uow}, logger, uow.Events())
 }
 
 // Handle upserts the reported models into the catalog cumulatively (ADR-0011):

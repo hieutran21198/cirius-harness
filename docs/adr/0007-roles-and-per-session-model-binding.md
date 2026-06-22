@@ -5,6 +5,8 @@
 - **Deciders**: hieu
 - **Supersedes**: ADR-0006
 - **Superseded by**: -
+- **Refined by**: [ADR-0016](0016-harness-owned-agent-persona-governed-turn.md) (an agent gains a
+  harness-owned `persona` — its behaviour/system prompt; still no stored per-agent model)
 
 > Refines [ADR-0005](0005-surrogate-uuid-v7-keys.md): a join table that carries an attribute
 > (`session_agents.model_id`) may use a surrogate `id`; pure junctions (`agent_tools`) keep a

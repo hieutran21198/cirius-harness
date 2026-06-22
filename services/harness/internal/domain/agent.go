@@ -18,6 +18,10 @@ type AgentID string
 // authorization principal: its name is the Casbin subject. Permissions are NOT
 // modelled here — authorization is a separate concern backed by Casbin (see
 // Decision/Action and internal/infra/casbin).
+//
+// An agent's persona (its harness-owned system prompt) is NOT stored here either: it
+// is harness-owned code, a domain constant resolved by name via PersonaFor, not
+// persisted on the aggregate (ADR-0016, see persona.go).
 type Agent struct {
 	id             AgentID
 	name           string
@@ -76,4 +80,32 @@ func (a Agent) Validate() error {
 		return fmt.Errorf("%w: unknown archetype %q", ErrInvalidAgent, a.archetype)
 	}
 	return nil
+}
+
+// AgentSnapshot is the persistence/read grouped view of an Agent: its whole state,
+// grouped for storage and reconstitution. It is the only way an Agent's state leaves
+// the domain; repositories map it to a row and RehydrateAgent mirrors its fields back.
+type AgentSnapshot struct {
+	ID             AgentID
+	Name           string
+	Archetype      Archetype
+	Responsibility string
+	Description    string
+	Source         Source
+	Enabled        bool
+	ToolIDs        []ToolID
+}
+
+// Snapshot returns the agent's persistence/read view.
+func (a Agent) Snapshot() AgentSnapshot {
+	return AgentSnapshot{
+		ID:             a.id,
+		Name:           a.name,
+		Archetype:      a.archetype,
+		Responsibility: a.responsibility,
+		Description:    a.description,
+		Source:         a.source,
+		Enabled:        a.enabled,
+		ToolIDs:        a.toolIDs,
+	}
 }

@@ -30,7 +30,16 @@ The live counterpart to the declarative agent team — *work actually happening*
 - **Membership** — the join recording which agents joined a session and, per
   [ADR-0007](../adr/0007-roles-and-per-session-model-binding.md), the **model** that agent ran
   with (`model_id`, empty for model-less `prayer`). Type: `domain.Member`, persisted in
-  `session_agents`.
+  `session_agents`. Recorded when an agent is resolved in a session
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
+- **Audit log** — the append-only record of what the harness did: one **Event** per command
+  (kind, actor, ok/error status, message), written through a command audit decorator. Persisted
+  in the `events` table; distinct from the **ephemeral stderr/file logs** and from scribe's
+  distilled lessons. Type: `domain.Event`
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
+- **Actor** (audit) — who caused a command (the reporting client; `""` if unknown). Carried on
+  the context (`internal/app/appctx`) by the delivery layer and recorded on each Event. Distinct
+  from the authorization **Principal** (the agent name).
 
 ## Agent team (declarative)
 
@@ -42,6 +51,36 @@ The team definition — *who can work* — independent of any running session.
   (`session_agents.model_id`); it is granted **tools** from the catalog via `agent_tools`
   ([ADR-0007](../adr/0007-roles-and-per-session-model-binding.md)). Type: `domain.Agent`
   (`services/harness/internal/domain`).
+- **Persona** — an agent's harness-owned behaviour, modelled as a **structured profile** (identity,
+  mission, effort-scaling rule, fixed output sections, delegation roster) that renders to the
+  **system prompt** the control plane hands the client to run a turn as that agent (e.g. council
+  weighing a request into a strategy plan). It is harness-owned **code** — a `domain.Persona`
+  constant resolved by name via `domain.PersonaFor`, **not** stored in the DB or workspace config.
+  Optional (most agents have none); distinct from the **model** (bound per session) and
+  **permissions** (Casbin). Resolved over the `resolve_agent` frame and run as a one-shot governed
+  turn ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md)). Type:
+  `domain.Persona` (an interface; `services/harness/internal/domain`).
+- **Council profile** — council's persona: a typed **orchestration model** (intents, the 7 task
+  dimensions, the category taxonomy, the agent-capability roster, routing rules, the flow pipeline,
+  quality gates, and the assignment factors) rendered to council's system prompt
+  ([ADR-0017](../adr/0017-council-orchestration-model.md)). Type: `domain.CouncilProfile`.
+- **Category** — a kind of work a task falls into (explore, research, architect, plan, implement,
+  test, review, security, performance, docs, migration, devops, integrate). Richer than the team;
+  council routes several categories onto one agent ([PDR-0002](../pdr/0002-agent-team-composition.md)).
+  Type: `domain.Category`.
+- **Lens** — a focus-mode an agent is summoned in so the team stays lean rather than minting a new
+  agent (e.g. `reviewer` in a *security* lens, `implementer` in a *tester* lens). Advisory guidance,
+  not a permission change ([PDR-0002](../pdr/0002-agent-team-composition.md)).
+- **Agent capability** — council's model of one team agent: what it handles, its tools, cost/speed,
+  reliability, risk tolerance, permissions, and lenses; the input to capability-based routing. Type:
+  `domain.AgentCapability`.
+- **Quality gate** — one rung of the four-gate human-in-the-loop model (advisory → validating →
+  blocking → escalating): how much oversight a task needs before it proceeds; high-risk work blocks
+  on human approval. Type: `domain.QualityGate`.
+- **Orchestration plan** — council's machine-readable output: an intent, a dimensioned analysis, and
+  a task DAG (per-task assignee+lens, expected output, dependencies, wave, definition-of-done, gate,
+  risk) a human reviews before it is driven ([ADR-0017](../adr/0017-council-orchestration-model.md)).
+  Type: `domain.OrchestrationPlan` / `domain.PlannedTask`.
 - **Model** — a provider/model-id in the first-class catalog (e.g. `anthropic/claude-opus-4-7`,
   stored as `client` + provider + `slug`), referenced by id from a session membership. Model
   names are **client-specific**, so the natural key is `(client, provider, slug)`
