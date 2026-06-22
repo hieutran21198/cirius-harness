@@ -12,7 +12,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,7 +20,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -30,11 +28,7 @@ import (
 	"harness-workspace/packages/go/migrate"
 	"harness-workspace/packages/go/slogx"
 	"harness-workspace/services/harness/internal/app"
-	"harness-workspace/services/harness/internal/app/appctx"
-	"harness-workspace/services/harness/internal/app/command"
-	"harness-workspace/services/harness/internal/app/query"
 	"harness-workspace/services/harness/internal/delivery/pilink"
-	"harness-workspace/services/harness/internal/domain"
 	"harness-workspace/services/harness/internal/infra/config"
 	"harness-workspace/services/harness/internal/infra/sqlite/readstore"
 	"harness-workspace/services/harness/internal/infra/sqlite/unitofwork"
@@ -136,7 +130,7 @@ func serve(dbPath string) error {
 	logger.Info("schema migrated", slog.Int64("version", version))
 
 	application := app.New(unitofwork.New(db), readstore.New(db), logger)
-	h := &handler{dbPath: dbPath, migrator: m, app: application, logger: logger, sessionID: sessionID}
+	h := pilink.NewHandler(application, m, logger, dbPath, sessionID)
 
 	logger.Info("ready", slog.String("db", dbPath), slog.Int64("schema", version), slog.Int("pid", os.Getpid()))
 	if err := pilink.Serve(ctx, os.Stdin, os.Stdout, h, logger); err != nil {
@@ -202,134 +196,4 @@ func newLogger(stateDir, sessionID string, level slog.Level) (*slog.Logger, stri
 	}
 	logger := slogx.New(w, level, format).With(slog.String("session", sessionID))
 	return logger, logPath, closeLog, nil
-}
-
-// handler implements pilink.Handler against the harness store. The ready frame
-// reports the applied schema version — proof the harness reached its migrated
-// state, the smallest honest liveness signal for the connect-only slice.
-type handler struct {
-	dbPath    string
-	migrator  *migrate.Migrator
-	app       app.Application
-	logger    *slog.Logger
-	sessionID string
-	// sessionStarted is set once the session row exists (after a hello with a cwd), so
-	// later agent-run recording has a session to attach to.
-	sessionStarted bool
-}
-
-func (h *handler) Hello(ctx context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
-	version, err := h.migrator.Version(ctx)
-	if err != nil {
-		return pilink.ReadyResp{}, fmt.Errorf("read schema version: %w", err)
-	}
-	h.logger.Info("client hello", slog.String("cwd", req.CWD), slog.Int("client_pid", req.PID))
-
-	// Record the session start (best-effort: a recording failure must not abort the
-	// handshake). Needs the project root from the client's cwd; skip if absent.
-	if req.CWD != "" {
-		_, err := h.app.Commands.StartSession.Handle(ctx, command.StartSession{
-			SessionID:   domain.SessionID(h.sessionID),
-			ProjectRoot: req.CWD,
-			ProjectName: filepath.Base(req.CWD),
-			CreatedAt:   time.Now(),
-		})
-		if err != nil {
-			h.logger.Warn("record session failed", slog.Any("err", err))
-		} else {
-			h.sessionStarted = true
-			h.logger.Info("session started", slog.String("session", h.sessionID))
-		}
-	}
-
-	return pilink.ReadyResp{
-		SchemaVersion: version,
-		DBPath:        h.dbPath,
-		PID:           os.Getpid(),
-	}, nil
-}
-
-// SyncModels adapts the wire frame to the SyncModels command: it translates the
-// reported refs into domain models, drives the application handler, and maps the
-// result back to the wire. No business logic lives here (ADR-0004, ADR-0012).
-func (h *handler) SyncModels(ctx context.Context, req pilink.ModelsReq) (pilink.ModelsSyncedResp, error) {
-	// The client is frame-level (one frame is one client's report) and part of every
-	// reported model's catalog identity, so it must be a known client.
-	client := domain.ClientKind(req.Client)
-	if !client.Valid() {
-		return pilink.ModelsSyncedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
-	}
-	reported := make([]domain.Ref, len(req.Models))
-	for i, ref := range req.Models {
-		reported[i] = domain.Ref{Client: client, Provider: ref.Provider, Slug: ref.Slug}
-	}
-	ctx = appctx.WithActor(ctx, string(client))
-	res, err := h.app.Commands.SyncModels.Handle(ctx, command.SyncModels{Reported: reported})
-	if err != nil {
-		return pilink.ModelsSyncedResp{}, err
-	}
-	h.logger.Info("models synced", slog.String("client", string(client)), slog.Int("added", res.Added), slog.Int("total", res.Total))
-	return pilink.ModelsSyncedResp{Added: res.Added, Total: res.Total}, nil
-}
-
-// ResolveAgent adapts the wire frame to the ResolveAgent query: it validates the
-// client, drives the application query, and maps the resolved persona back to the
-// wire. No business logic lives here (ADR-0004, ADR-0012).
-func (h *handler) ResolveAgent(ctx context.Context, req pilink.ResolveAgentReq) (pilink.AgentResolvedResp, error) {
-	// The client is part of the (later) client-specific model resolution, so it must be
-	// a known client even though the persona itself is client-agnostic.
-	client := domain.ClientKind(req.Client)
-	if !client.Valid() {
-		return pilink.AgentResolvedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
-	}
-	res, err := h.app.Queries.ResolveAgent.Handle(ctx, query.ResolveAgent{Name: req.Agent, Client: client})
-	if err != nil {
-		return pilink.AgentResolvedResp{}, err
-	}
-	h.logger.Info("agent resolved", slog.String("agent", res.Name), slog.String("client", string(client)))
-
-	// Record that this agent ran in the session (best-effort; needs a started session).
-	if h.sessionStarted {
-		ctx = appctx.WithActor(ctx, string(client))
-		_, rerr := h.app.Commands.RecordAgentRun.Handle(ctx, command.RecordAgentRun{
-			SessionID: domain.SessionID(h.sessionID),
-			AgentID:   res.AgentID,
-			ModelID:   domain.ModelID(res.Model),
-		})
-		if rerr != nil {
-			h.logger.Warn("record agent run failed", slog.String("agent", res.Name), slog.Any("err", rerr))
-		}
-	}
-
-	return pilink.AgentResolvedResp{Name: res.Name, Persona: res.Persona, Model: res.Model}, nil
-}
-
-// SubmitPlan adapts the wire frame to the SubmitPlan command: it validates the client, decodes
-// the plan against the harness contract, attaches it to the current session, drives the
-// application handler, and maps the result back to the wire. No business logic lives here.
-func (h *handler) SubmitPlan(ctx context.Context, req pilink.SubmitPlanReq) (pilink.PlanRecordedResp, error) {
-	client := domain.ClientKind(req.Client)
-	if !client.Valid() {
-		return pilink.PlanRecordedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
-	}
-	if !h.sessionStarted {
-		return pilink.PlanRecordedResp{}, fmt.Errorf("no session to attach the plan to")
-	}
-	var plan domain.OrchestrationPlan
-	if err := json.Unmarshal(req.Plan, &plan); err != nil {
-		return pilink.PlanRecordedResp{}, fmt.Errorf("invalid plan: %w", err)
-	}
-
-	ctx = appctx.WithActor(ctx, string(client))
-	res, err := h.app.Commands.SubmitPlan.Handle(ctx, command.SubmitPlan{
-		SessionID: domain.SessionID(h.sessionID),
-		Agent:     req.Agent,
-		Plan:      plan,
-		CreatedAt: time.Now(),
-	})
-	if err != nil {
-		return pilink.PlanRecordedResp{}, err
-	}
-	h.logger.Info("plan recorded", slog.String("agent", req.Agent), slog.String("plan", string(res.PlanID)), slog.Int("tasks", res.TaskCount))
-	return pilink.PlanRecordedResp{PlanID: string(res.PlanID), TaskCount: res.TaskCount}, nil
 }

@@ -91,5 +91,5 @@ as a relational `domain.Plan` aggregate.**
   [conventions/api.md](../conventions/api.md) (the new frames).
 - `internal/domain/{plan,plan_contract,plan_writer,orchestration}.go`,
   `internal/app/command/submit_plan.go`, `internal/infra/sqlite/repo/plan.go`,
-  `internal/delivery/pilink/pilink.go`, `cmd/harness/main.go`,
+  `internal/delivery/pilink/{pilink,handler}.go` (frames + the harness-side handler),
   `migrations/…_create_plans.sql`, `apps/pi-harness-extension/src/index.ts`.
