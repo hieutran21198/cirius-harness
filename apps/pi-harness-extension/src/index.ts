@@ -31,10 +31,15 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { drivePlan } from "./coordination/engine";
 
 const STATUS_KEY = "harness";
+const DRIVE_STATUS_KEY = "harness-drive";
 const BINARY_REL = ".cirius-harness/bin/harness";
 const REQUEST_TIMEOUT_MS = 5000;
+// Per-task worker timeout while driving a plan (a headless `pi` run). Generous — a task may be a
+// full implementation turn — but bounded so a hung worker cannot stall the whole drive.
+const TASK_TIMEOUT_MS = 300_000;
 
 interface ReadyResp {
 	schemaVersion: number;
@@ -152,6 +157,11 @@ export default function (pi: ExtensionAPI) {
 	let councilProposed = false;
 	let councilPersona = "";
 
+	// Drive state (ADR-0021). lastPlanId is the most recently submitted plan this session, so
+	// `/drive` with no argument drives it; driving guards against a second concurrent drive.
+	let lastPlanId: string | undefined;
+	let driving = false;
+
 	const setStatus = (ctx: ExtensionContext, text: string | undefined) => {
 		if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, text);
 	};
@@ -165,6 +175,8 @@ export default function (pi: ExtensionAPI) {
 		harnessRequest = undefined;
 		councilActive = false;
 		councilProposed = false;
+		lastPlanId = undefined;
+		driving = false;
 		if (!c) return;
 		try {
 			c.stdin?.end();
@@ -365,10 +377,78 @@ export default function (pi: ExtensionAPI) {
 				plan,
 			});
 			councilActive = false; // captured the approved plan — stop watching
-			notify(ctx, `harness: plan saved (${rec.taskCount} tasks)`, "info");
+			lastPlanId = rec.planId; // remember it so `/drive` can run it
+			notify(ctx, `harness: plan saved (${rec.taskCount} tasks) — run it with /drive`, "info");
 		} catch (err) {
 			notify(ctx, `harness: plan save failed (${(err as Error).message})`, "error");
 		}
+	});
+
+	// --drive-dry-run: drive the plan's loop (scheduling, gating, reporting) without spawning real
+	// workers — each task's worker echoes its prompt. Lets a human exercise the drive end to end.
+	pi.registerFlag("drive-dry-run", {
+		description: "Drive plans without spawning real pi workers (echo prompts).",
+		type: "boolean",
+		default: false,
+	});
+
+	// /drive [planId]: execute a persisted council plan (ADR-0021). The harness serves the plan and
+	// records progress; this coordinator spawns one headless `pi` worker per task, sequenced by the
+	// plan's waves and depends_on, concurrent within a wave. With no id it drives the most recent
+	// plan submitted this session (the harness falls back to the session's latest).
+	pi.registerCommand("drive", {
+		description: "Drive a council plan: run its tasks via headless pi workers, by wave.",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			if (!harnessRequest) {
+				notify(ctx, "harness: not connected — cannot drive a plan", "error");
+				return;
+			}
+			if (driving) {
+				notify(ctx, "harness: a drive is already in progress", "error");
+				return;
+			}
+			const request = harnessRequest;
+			const planId = args.trim() || lastPlanId;
+			driving = true;
+			try {
+				await drivePlan(
+					{
+						exec: (command, cmdArgs, opts) => pi.exec(command, cmdArgs, opts),
+						request,
+						notify: (msg, level) => notify(ctx, msg, level),
+						progress: (text) => {
+							if (ctx.hasUI) ctx.ui.setStatus(DRIVE_STATUS_KEY, text);
+						},
+						// Without a UI, decline gated tasks (skip) rather than auto-approving high-risk work.
+						confirm: (title, message) =>
+							ctx.hasUI ? ctx.ui.confirm(title, message) : Promise.resolve(false),
+						cwd: ctx.cwd,
+						piBin: "pi",
+						taskTimeoutMs: TASK_TIMEOUT_MS,
+						dryRun: pi.getFlag("drive-dry-run") === true,
+					},
+					planId,
+				);
+			} catch (err) {
+				notify(ctx, `harness: drive failed (${(err as Error).message})`, "error");
+			} finally {
+				driving = false;
+				if (ctx.hasUI) ctx.ui.setStatus(DRIVE_STATUS_KEY, undefined);
+			}
+		},
+	});
+
+	// /drive-status: report whether a drive is in progress and which plan `/drive` would run.
+	pi.registerCommand("drive-status", {
+		description: "Show the harness drive status (active drive; the plan /drive would run).",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const target = lastPlanId ?? "(session's latest plan)";
+			notify(
+				ctx,
+				driving ? "harness: a drive is in progress" : `harness: idle — /drive runs ${target}`,
+				"info",
+			);
+		},
 	});
 
 	pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {

@@ -12,9 +12,11 @@ import (
 
 // stubHandler records the inbound requests and returns canned replies.
 type stubHandler struct {
-	gotModels pilink.ModelsReq
-	gotAgent  pilink.ResolveAgentReq
-	gotPlan   pilink.SubmitPlanReq
+	gotModels    pilink.ModelsReq
+	gotAgent     pilink.ResolveAgentReq
+	gotPlan      pilink.SubmitPlanReq
+	gotGetPlan   pilink.GetPlanReq
+	gotReportRun pilink.ReportRunReq
 }
 
 func (s *stubHandler) Hello(_ context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
@@ -34,6 +36,21 @@ func (s *stubHandler) ResolveAgent(_ context.Context, req pilink.ResolveAgentReq
 func (s *stubHandler) SubmitPlan(_ context.Context, req pilink.SubmitPlanReq) (pilink.PlanRecordedResp, error) {
 	s.gotPlan = req
 	return pilink.PlanRecordedResp{PlanID: "plan-1", TaskCount: 7}, nil
+}
+
+func (s *stubHandler) GetPlan(_ context.Context, req pilink.GetPlanReq) (pilink.PlanResp, error) {
+	s.gotGetPlan = req
+	return pilink.PlanResp{
+		PlanID:  "plan-1",
+		Status:  "planned",
+		Plan:    json.RawMessage(`{"intent":"implement","tasks":[{"id":"T1"}]}`),
+		TaskIDs: map[string]string{"T1": "task-1"},
+	}, nil
+}
+
+func (s *stubHandler) ReportRun(_ context.Context, req pilink.ReportRunReq) (pilink.RunReportedResp, error) {
+	s.gotReportRun = req
+	return pilink.RunReportedResp{PlanRunID: "run-1", Status: "driving"}, nil
 }
 
 // decodeLines reads NDJSON frames from out into generic maps.
@@ -143,6 +160,64 @@ func TestServeRoutesSubmitPlan(t *testing.T) {
 	}
 	if len(h.gotPlan.Plan) == 0 {
 		t.Fatal("handler got empty plan payload")
+	}
+}
+
+func TestServeRoutesGetPlan(t *testing.T) {
+	h := &stubHandler{}
+	in := strings.NewReader(
+		`{"type":"get_plan","id":"g1","planId":"plan-1","client":"pi"}` + "\n",
+	)
+	var out strings.Builder
+	if err := pilink.Serve(context.Background(), in, &out, h, nil); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	frames := decodeLines(t, out.String())
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1: %v", len(frames), frames)
+	}
+	pl := frames[0]
+	if pl["type"] != "plan" || pl["id"] != "g1" {
+		t.Fatalf("frame = %v, want plan/g1", pl)
+	}
+	if pl["planId"] != "plan-1" || pl["status"] != "planned" {
+		t.Fatalf("plan = %v, want plan-1/planned", pl)
+	}
+	if ids, ok := pl["taskIds"].(map[string]any); !ok || ids["T1"] != "task-1" {
+		t.Fatalf("taskIds = %v, want T1=task-1", pl["taskIds"])
+	}
+	if h.gotGetPlan.PlanID != "plan-1" || h.gotGetPlan.Client != "pi" {
+		t.Fatalf("handler got %+v, want planId=plan-1 client=pi", h.gotGetPlan)
+	}
+}
+
+func TestServeRoutesReportRun(t *testing.T) {
+	h := &stubHandler{}
+	in := strings.NewReader(
+		`{"type":"report_run","id":"rr1","client":"pi","planId":"plan-1","planStatus":"driving","task":{"ref":"T1","status":"running"}}` + "\n",
+	)
+	var out strings.Builder
+	if err := pilink.Serve(context.Background(), in, &out, h, nil); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	frames := decodeLines(t, out.String())
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1: %v", len(frames), frames)
+	}
+	rr := frames[0]
+	if rr["type"] != "run_reported" || rr["id"] != "rr1" {
+		t.Fatalf("frame = %v, want run_reported/rr1", rr)
+	}
+	if rr["planRunId"] != "run-1" || rr["status"] != "driving" {
+		t.Fatalf("run_reported = %v, want run-1/driving", rr)
+	}
+	if h.gotReportRun.PlanID != "plan-1" || h.gotReportRun.PlanStatus != "driving" {
+		t.Fatalf("handler got %+v, want planId=plan-1 planStatus=driving", h.gotReportRun)
+	}
+	if h.gotReportRun.Task == nil || h.gotReportRun.Task.Ref != "T1" || h.gotReportRun.Task.Status != "running" {
+		t.Fatalf("handler task = %+v, want T1/running", h.gotReportRun.Task)
 	}
 }
 

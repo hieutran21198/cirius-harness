@@ -38,6 +38,16 @@ func (u *UnitOfWork) Sessions() domain.SessionWriter { return repo.NewSessionWri
 // Plans returns the orchestration-plan writer bound to this unit of work's handle.
 func (u *UnitOfWork) Plans() domain.PlanWriter { return repo.NewPlanWriter(u.db) }
 
+// PlanRuns returns the plan-run writer (drive progress) bound to this unit of work's handle.
+func (u *UnitOfWork) PlanRuns() domain.PlanRunWriter { return repo.NewPlanRunWriter(u.db) }
+
+// PlanReader returns the plan reader bound to this unit of work's handle, for an
+// in-transaction read (e.g. ReportRun seeding a run from the plan's task refs).
+func (u *UnitOfWork) PlanReader() domain.PlanReader { return repo.NewPlanReader(u.db) }
+
+// PlanRunReader returns the plan-run reader bound to this unit of work's handle.
+func (u *UnitOfWork) PlanRunReader() domain.PlanRunReader { return repo.NewPlanRunReader(u.db) }
+
 // DoTx runs fn inside one transaction: every writer obtained from the txU shares
 // it, committing on nil and rolling back on error (or panic).
 func (u *UnitOfWork) DoTx(ctx context.Context, fn func(ctx context.Context, tx command.TransactionalUnitOfWork) error) error {

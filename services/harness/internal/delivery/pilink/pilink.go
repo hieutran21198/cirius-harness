@@ -36,11 +36,15 @@ const (
 	typeModels        = "models"         // in:  client reports its enabled models
 	typeResolveAgent  = "resolve_agent"  // in:  client asks the harness to resolve an agent
 	typeSubmitPlan    = "submit_plan"    // in:  client submits an approved council plan to persist
+	typeGetPlan       = "get_plan"       // in:  client fetches a persisted plan to drive
+	typeReportRun     = "report_run"     // in:  client reports drive progress (plan/task status)
 	typeReady         = "ready"          // out: handshake accepted, harness is live
 	typePong          = "pong"           // out: reply to ping
 	typeModelsSynced  = "models_synced"  // out: catalog sync result
 	typeAgentResolved = "agent_resolved" // out: resolved agent (persona, and later model)
 	typePlanRecorded  = "plan_recorded"  // out: plan persisted (id + task count)
+	typePlanFetched   = "plan"           // out: the fetched plan (contract shape + ids + status)
+	typeRunReported   = "run_reported"   // out: drive progress recorded (run id + status)
 	typeError         = "error"          // out: a frame could not be handled
 )
 
@@ -149,6 +153,51 @@ type PlanRecordedResp struct {
 	TaskCount int    `json:"taskCount"`
 }
 
+// GetPlanReq is the inbound "get_plan" frame: the client fetches a persisted plan to drive. An
+// empty PlanID means "the latest plan produced in the current session". Client is the reporting
+// client.
+type GetPlanReq struct {
+	Type   string `json:"type"`
+	ID     string `json:"id,omitempty"`
+	PlanID string `json:"planId,omitempty"`
+	Client string `json:"client,omitempty"`
+}
+
+// PlanResp is the outbound reply to a "get_plan" frame: the plan in the OrchestrationPlan contract
+// shape (the same vocabulary submit_plan uses), its id and current status, and the ref→task-id map
+// so the driver can target a task when reporting progress.
+type PlanResp struct {
+	Type    string            `json:"type"`
+	ID      string            `json:"id,omitempty"`
+	PlanID  string            `json:"planId"`
+	Status  string            `json:"status"`
+	Plan    json.RawMessage   `json:"plan"`
+	TaskIDs map[string]string `json:"taskIds"`
+}
+
+// ReportRunReq is the inbound "report_run" frame: the client records drive progress for a plan —
+// an optional plan-level status move (driving→done) and/or an optional per-task status update.
+type ReportRunReq struct {
+	Type       string `json:"type"`
+	ID         string `json:"id,omitempty"`
+	Client     string `json:"client,omitempty"`
+	PlanID     string `json:"planId"`
+	PlanStatus string `json:"planStatus,omitempty"`
+	Task       *struct {
+		Ref     string `json:"ref"`
+		Status  string `json:"status"`
+		Summary string `json:"summary,omitempty"`
+	} `json:"task,omitempty"`
+}
+
+// RunReportedResp is the outbound reply to a "report_run" frame: the run's id and current status.
+type RunReportedResp struct {
+	Type      string `json:"type"`
+	ID        string `json:"id,omitempty"`
+	PlanRunID string `json:"planRunId"`
+	Status    string `json:"status"`
+}
+
 // errorResp is the outbound frame for an unhandled inbound frame.
 type errorResp struct {
 	Type    string `json:"type"`
@@ -170,6 +219,12 @@ type Handler interface {
 	// SubmitPlan persists a council-produced orchestration plan the human approved, reporting
 	// the stored plan's id and task count.
 	SubmitPlan(ctx context.Context, req SubmitPlanReq) (PlanRecordedResp, error)
+	// GetPlan fetches a persisted plan (by id, or the latest for the session) so the client can
+	// drive it, returning it in the OrchestrationPlan contract shape with its ids and status.
+	GetPlan(ctx context.Context, req GetPlanReq) (PlanResp, error)
+	// ReportRun records drive progress for a plan (plan-level status and/or a per-task update),
+	// returning the run's id and current status.
+	ReportRun(ctx context.Context, req ReportRunReq) (RunReportedResp, error)
 }
 
 // Serve runs the NDJSON request/response loop until in reaches EOF or ctx is
@@ -289,6 +344,32 @@ func dispatch(ctx context.Context, enc *json.Encoder, h Handler, env envelope, r
 			return replyErr("%s", err.Error())
 		}
 		resp.Type = typePlanRecorded
+		resp.ID = env.ID
+		return enc.Encode(resp)
+
+	case typeGetPlan:
+		var req GetPlanReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return replyErr("invalid get_plan: %v", err)
+		}
+		resp, err := h.GetPlan(ctx, req)
+		if err != nil {
+			return replyErr("%s", err.Error())
+		}
+		resp.Type = typePlanFetched
+		resp.ID = env.ID
+		return enc.Encode(resp)
+
+	case typeReportRun:
+		var req ReportRunReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return replyErr("invalid report_run: %v", err)
+		}
+		resp, err := h.ReportRun(ctx, req)
+		if err != nil {
+			return replyErr("%s", err.Error())
+		}
+		resp.Type = typeRunReported
 		resp.ID = env.ID
 		return enc.Encode(resp)
 

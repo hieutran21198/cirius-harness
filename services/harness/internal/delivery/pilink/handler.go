@@ -152,3 +152,72 @@ func (h *handler) SubmitPlan(ctx context.Context, req SubmitPlanReq) (PlanRecord
 	h.logger.Info("plan recorded", slog.String("agent", req.Agent), slog.String("plan", string(res.PlanID)), slog.Int("tasks", res.TaskCount))
 	return PlanRecordedResp{PlanID: string(res.PlanID), TaskCount: res.TaskCount}, nil
 }
+
+// GetPlan adapts the wire frame to the GetPlan query: it validates the client, fetches the plan
+// (by id, or the latest for the current session when no id is given), and maps the result back to
+// the wire. No business logic lives here.
+func (h *handler) GetPlan(ctx context.Context, req GetPlanReq) (PlanResp, error) {
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return PlanResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
+	q := query.GetPlan{PlanID: domain.PlanID(req.PlanID)}
+	if req.PlanID == "" {
+		if !h.sessionStarted {
+			return PlanResp{}, fmt.Errorf("no session to fetch the latest plan for")
+		}
+		q.SessionID = domain.SessionID(h.sessionID)
+	}
+	res, err := h.app.Queries.GetPlan.Handle(ctx, q)
+	if err != nil {
+		return PlanResp{}, err
+	}
+	planJSON, err := json.Marshal(res.Plan)
+	if err != nil {
+		return PlanResp{}, fmt.Errorf("marshal plan: %w", err)
+	}
+	taskIDs := make(map[string]string, len(res.TaskIDByRef))
+	for ref, id := range res.TaskIDByRef {
+		taskIDs[ref] = string(id)
+	}
+	h.logger.Info("plan fetched", slog.String("plan", string(res.PlanID)), slog.String("status", string(res.Status)))
+	return PlanResp{PlanID: string(res.PlanID), Status: string(res.Status), Plan: planJSON, TaskIDs: taskIDs}, nil
+}
+
+// ReportRun adapts the wire frame to the ReportRun command: it validates the client and the
+// reported statuses, attaches the run to the current session, drives the application handler, and
+// maps the result back to the wire. No business logic lives here.
+func (h *handler) ReportRun(ctx context.Context, req ReportRunReq) (RunReportedResp, error) {
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return RunReportedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
+	if req.PlanID == "" {
+		return RunReportedResp{}, fmt.Errorf("planId is required")
+	}
+	cmd := command.ReportRun{PlanID: domain.PlanID(req.PlanID), Now: time.Now()}
+	if h.sessionStarted {
+		cmd.SessionID = domain.SessionID(h.sessionID)
+	}
+	if req.PlanStatus != "" {
+		ps := domain.PlanStatus(req.PlanStatus)
+		if !ps.Valid() {
+			return RunReportedResp{}, fmt.Errorf("unknown plan status %q", req.PlanStatus)
+		}
+		cmd.PlanStatus = ps
+	}
+	if req.Task != nil {
+		ts := domain.TaskStatus(req.Task.Status)
+		if !ts.Valid() {
+			return RunReportedResp{}, fmt.Errorf("unknown task status %q", req.Task.Status)
+		}
+		cmd.Task = &command.ReportTask{Ref: req.Task.Ref, Status: ts, Summary: req.Task.Summary}
+	}
+	ctx = appctx.WithActor(ctx, string(client))
+	res, err := h.app.Commands.ReportRun.Handle(ctx, cmd)
+	if err != nil {
+		return RunReportedResp{}, err
+	}
+	h.logger.Info("run reported", slog.String("plan", req.PlanID), slog.String("status", string(res.Status)))
+	return RunReportedResp{PlanRunID: string(res.PlanRunID), Status: string(res.Status)}, nil
+}

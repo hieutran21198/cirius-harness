@@ -39,6 +39,10 @@ sets and the harness echoes on the reply (so a client can correlate request↔re
 | out | `agent_resolved` | resolved agent (`name`, `persona`; `model` empty until the resolver milestone) |
 | in  | `submit_plan` | client submits a human-approved council plan to persist (`agent`, `client`, `plan` — the plan object matching the harness contract) ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)); an unknown/missing `client`, no active session, or an invalid plan is an `error` frame |
 | out | `plan_recorded` | plan persisted (`planId`, `taskCount`) |
+| in  | `get_plan` | client fetches a persisted plan to drive (`client`; `planId` optional — empty fetches the session's latest) ([ADR-0021](../adr/0021-drive-the-council-plan.md)); an unknown/missing `client` or no plan is an `error` frame |
+| out | `plan` | the fetched plan (`planId`, `status`, `plan` — the OrchestrationPlan contract, `taskIds` — ref→task-id) |
+| in  | `report_run` | client records drive progress (`client`, `planId`, optional `planStatus`, optional `task: {ref, status, summary}`) ([ADR-0021](../adr/0021-drive-the-council-plan.md)); an unknown status or illegal transition is an `error` frame |
+| out | `run_reported` | drive progress recorded (`planRunId`, `status`) |
 | out | `error` | a frame could not be handled (`message`) |
 
 New frames are additive (same rule as cmd output). The Go contract lives in

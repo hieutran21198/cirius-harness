@@ -91,7 +91,15 @@ attributes, and references travel by UUID id ([ADR-0005](../adr/0005-surrogate-u
   ref, category, assignee agent+lens, objective, inputs/depends_on/dod as JSON, gate, risk),
   `PlanRisk`, `PlanApproval`, and `PlanWave` whose task membership is the `plan_wave_tasks` join.
   Built from the `OrchestrationPlan` contract and validated as a DAG (unique refs, no dangling
-  dependencies). Persisted via `domain.PlanWriter`. A future executor drives it; this records it.
+  dependencies). Persisted via `domain.PlanWriter`; read back via `domain.PlanReader`
+  (`FindByID` / `LatestForSession`) when a client drives it.
+- `PlanRun` (ID, PlanID, SessionID?, Status, CreatedAt, UpdatedAt, Tasks) — the **execution state**
+  over an approved `Plan` when it is driven ([ADR-0021](../adr/0021-drive-the-council-plan.md)). The
+  Plan is an immutable spec; the run records progress, so an approved plan is never rewritten. Child
+  `TaskRun` (TaskRef, Status {pending|running|done|failed|skipped}, Summary, UpdatedAt) — one per
+  task ref. Status moves are guarded by legal transitions in the domain. Persisted via
+  `domain.PlanRunWriter`, which **UPSERTs** (the one writer that updates in place, since a drive
+  reports repeatedly); read back via `domain.PlanRunReader`. One live run per plan.
 
 ### Schema (SQLite)
 
@@ -218,6 +226,22 @@ erDiagram
         TEXT plan_wave_id PK,FK
         TEXT plan_task_id PK,FK
     }
+    plan_runs {
+        TEXT     id         PK
+        TEXT     plan_id    FK "UNIQUE"
+        TEXT     session_id FK "nullable"
+        TEXT     status
+        DATETIME created_at
+        DATETIME updated_at
+    }
+    plan_task_runs {
+        TEXT     id          PK
+        TEXT     plan_run_id FK
+        TEXT     task_ref    "UNIQUE per run"
+        TEXT     status
+        TEXT     summary
+        DATETIME updated_at
+    }
 
     agents    ||--o{ agent_tools    : "granted"
     tools     ||--o{ agent_tools    : ""
@@ -236,12 +260,14 @@ erDiagram
     plans     ||--o{ plan_waves     : "has"
     plan_waves ||--o{ plan_wave_tasks : "groups"
     plan_tasks ||--o{ plan_wave_tasks : "member of"
+    plans     ||--o{ plan_runs       : "driven by"
+    plan_runs ||--o{ plan_task_runs  : "tracks"
 ```
 
 `models`, `agents`, `tools`, `agent_tools`, `projects`, `containers`, `worktrees`,
 `sessions`, `session_agents` — all created by one goose migration in FK order (the `events` table
 and the `plans` family — `plans`, `plan_tasks`, `plan_risks`, `plan_approvals`, `plan_waves`,
-`plan_wave_tasks` — are later migrations). Each aggregate
+`plan_wave_tasks`, and the run tables `plan_runs` / `plan_task_runs` — are later migrations). Each aggregate
 table has an `id TEXT PRIMARY KEY NOT NULL` (UUID v7) with the natural key as `UNIQUE NOT NULL`;
 foreign keys reference the parent **id** (`agent_id`, `tool_id`, `model_id`, `project_id`,
 `session_id`) with `ON DELETE CASCADE`. `agent_tools` is a **pure junction** (composite PK
@@ -268,16 +294,19 @@ There is no production history yet, so the initial schema is a single `…_initi
 - GORM **driven adapters** in `internal/infra` implementing the domain `Writer`/`Reader`
   interfaces via a `UnitOfWork`/`ReadStore` ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
   — the write side exposes `domain.ModelWriter`, `EventWriter`, `ProjectWriter`,
-  `SessionWriter`, and `PlanWriter` on `command.UnitOfWork` (`infra/sqlite/unitofwork` +
+  `SessionWriter`, `PlanWriter`, and `PlanRunWriter` on `command.UnitOfWork` (`infra/sqlite/unitofwork` +
   `infra/sqlite/repo`): the harness records the audit log, the project, the session, each agent run
-  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)), and an approved council
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)), an approved council
   plan across the six `plan*` tables
-  ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)). The read side has its
-  first reader (`infra/sqlite/readstore` + `infra/sqlite/repo`: `query.ReadStore` +
-  `domain.AgentReader`, serving `ResolveAgent`'s exists/enabled check — the persona itself is a
+  ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)), and a plan's drive progress —
+  `PlanRunWriter` is the one writer that **UPSERTs** rather than inserts-once
+  ([ADR-0021](../adr/0021-drive-the-council-plan.md)). The read side exposes
+  `domain.AgentReader` and `domain.PlanReader` on `query.ReadStore` (`infra/sqlite/readstore` +
+  `infra/sqlite/repo`), serving `ResolveAgent`'s exists/enabled check (the persona itself is a
   `domain.Persona` constant, not read from a column
-  ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md))); the remaining read sides
-  (model catalog, session/project queries) are deferred.
+  ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md))) and `GetPlan`'s read-back
+  for a drive; `PlanRunReader` lets `ReportRun` load-or-seed the run in its transaction. The
+  remaining read sides (model catalog, session/project queries) are deferred.
 - The **`models` catalog is client-reported**, not seeded: a client syncs its enabled models
   in at session start and the catalog is a cumulative union, keyed **per client**
   `(client, provider, slug)` since model names are client-specific

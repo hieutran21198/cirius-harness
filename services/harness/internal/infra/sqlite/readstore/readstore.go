@@ -22,5 +22,8 @@ func New(db *gorm.DB) *ReadStore { return &ReadStore{db: db} }
 // Agents returns the agent reader bound to this store's handle.
 func (s *ReadStore) Agents() domain.AgentReader { return repo.NewAgentReader(s.db) }
 
+// Plans returns the plan reader bound to this store's handle.
+func (s *ReadStore) Plans() domain.PlanReader { return repo.NewPlanReader(s.db) }
+
 // staticcheck: ensure ReadStore satisfies the query port.
 var _ query.ReadStore = (*ReadStore)(nil)

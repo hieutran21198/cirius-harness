@@ -50,6 +50,21 @@ The live counterpart to the declarative agent team — *work actually happening*
   (children), persisted in `plans` / `plan_tasks` / `plan_waves` / `plan_wave_tasks` / `plan_risks`
   / `plan_approvals`. Distinct from the **Orchestration plan** contract (the wire/prompt shape it
   is built from).
+- **Plan run** — the execution state over an approved **Plan** when it is driven: the drive's
+  status (driving → done/cancelled) and the per-task progress the client-coordinated drive reports.
+  The Plan stays an immutable spec; the run records what happened, so an approved plan is never
+  rewritten. One live run per plan; identified by a UUID v7. Type: `domain.PlanRun` (root) with
+  child `domain.TaskRun`, persisted in `plan_runs` / `plan_task_runs`
+  ([ADR-0021](../adr/0021-drive-the-council-plan.md)).
+- **Task run** — one task's progress within a **plan run**: its status (pending → running →
+  done/failed/skipped) and a short result summary. Type: `domain.TaskRun`, persisted in
+  `plan_task_runs`.
+- **Drive** — client-coordinated execution of a plan: the harness serves the plan (`get_plan`) and
+  records progress (`report_run`); a coordinator in the Pi client spawns one headless `pi` worker
+  per task, sequenced by the plan's waves and dependencies, gating high-risk tasks on human
+  approval. The harness governs and records, it does not schedule or run workers — so a drive is
+  still Module 1; a harness-owned scheduler would be Module 2
+  ([ADR-0021](../adr/0021-drive-the-council-plan.md), [ADR-0001](../adr/0001-harness-layout.md)).
 
 ## Agent team (declarative)
 

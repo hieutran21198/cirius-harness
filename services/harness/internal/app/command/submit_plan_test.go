@@ -25,11 +25,14 @@ func (w *fakePlanWriter) Save(_ context.Context, p domain.Plan) error {
 // with itself (no real transaction).
 type planUoW struct{ pw *fakePlanWriter }
 
-func (u *planUoW) Models() domain.ModelWriter     { return nil }
-func (u *planUoW) Events() domain.EventWriter     { return nil }
-func (u *planUoW) Projects() domain.ProjectWriter { return nil }
-func (u *planUoW) Sessions() domain.SessionWriter { return nil }
-func (u *planUoW) Plans() domain.PlanWriter       { return u.pw }
+func (u *planUoW) Models() domain.ModelWriter          { return nil }
+func (u *planUoW) Events() domain.EventWriter          { return nil }
+func (u *planUoW) Projects() domain.ProjectWriter      { return nil }
+func (u *planUoW) Sessions() domain.SessionWriter      { return nil }
+func (u *planUoW) Plans() domain.PlanWriter            { return u.pw }
+func (u *planUoW) PlanRuns() domain.PlanRunWriter      { return nil }
+func (u *planUoW) PlanReader() domain.PlanReader       { return nil }
+func (u *planUoW) PlanRunReader() domain.PlanRunReader { return nil }
 func (u *planUoW) DoTx(ctx context.Context, fn func(context.Context, command.TransactionalUnitOfWork) error) error {
 	return fn(ctx, u)
 }

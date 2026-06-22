@@ -11,13 +11,18 @@ import (
 // Writers and runs them inside a transaction. The infra adapter implements these.
 
 // TransactionalUnitOfWork exposes the writers available within a unit of work.
-// Inside DoTx they are bound to the open transaction.
+// Inside DoTx they are bound to the open transaction. It also exposes the plan readers a
+// command needs for an in-transaction read-modify-write (ReportRun loads the plan's refs and
+// its run before mutating — keeping the read and the write under one lock).
 type TransactionalUnitOfWork interface {
 	Models() domain.ModelWriter
 	Events() domain.EventWriter
 	Projects() domain.ProjectWriter
 	Sessions() domain.SessionWriter
 	Plans() domain.PlanWriter
+	PlanRuns() domain.PlanRunWriter
+	PlanReader() domain.PlanReader
+	PlanRunReader() domain.PlanRunReader
 }
 
 // UnitOfWork is a TransactionalUnitOfWork whose writers autocommit per call, and

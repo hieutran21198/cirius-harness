@@ -12,4 +12,5 @@ import (
 // ReadStore exposes the readers available to the query side.
 type ReadStore interface {
 	Agents() domain.AgentReader
+	Plans() domain.PlanReader
 }
