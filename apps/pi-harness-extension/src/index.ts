@@ -26,6 +26,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type {
+	AgentEndEvent,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
@@ -52,6 +53,83 @@ interface AgentResolvedResp {
 	model?: string;
 }
 
+interface PlanRecordedResp {
+	planId: string;
+	taskCount: number;
+}
+
+// lastAssistantText concatenates the text blocks of the most recent assistant message in a
+// finished agent run (council's plan output). Thinking/tool blocks are ignored.
+function lastAssistantText(messages: AgentEndEvent["messages"]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role !== "assistant") continue;
+		if (typeof m.content === "string") return m.content;
+		return m.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+	}
+	return "";
+}
+
+// jsonObjects returns every balanced top-level {…} substring in text, scanning
+// string/escape-aware so braces inside JSON strings don't throw off the depth count. Used to
+// find council's plan even when it is wrapped in prose ("here is the approved plan: {…}").
+function jsonObjects(text: string): string[] {
+	const out: string[] = [];
+	let depth = 0;
+	let start = -1;
+	let inStr = false;
+	let esc = false;
+	for (let i = 0; i < text.length; i++) {
+		const c = text[i];
+		if (inStr) {
+			if (esc) esc = false;
+			else if (c === "\\") esc = true;
+			else if (c === '"') inStr = false;
+			continue;
+		}
+		if (c === '"') inStr = true;
+		else if (c === "{") {
+			if (depth === 0) start = i;
+			depth++;
+		} else if (c === "}" && depth > 0) {
+			depth--;
+			if (depth === 0 && start >= 0) {
+				out.push(text.slice(start, i + 1));
+				start = -1;
+			}
+		}
+	}
+	return out;
+}
+
+// extractPlan pulls council's final plan out of an assistant message. It prefers a fenced
+// ```json block (what council emits on approval), then any balanced {…} object in the text, and
+// accepts the first that parses to an object carrying a non-empty `tasks` array — so non-plan
+// JSON and the Markdown review turns yield nothing.
+function extractPlan(text: string): Record<string, unknown> | undefined {
+	const asPlan = (s: string): Record<string, unknown> | undefined => {
+		try {
+			const v: unknown = JSON.parse(s);
+			if (v && typeof v === "object" && !Array.isArray(v)) {
+				const obj = v as Record<string, unknown>;
+				if (Array.isArray(obj.tasks) && obj.tasks.length > 0) return obj;
+			}
+		} catch {
+			/* not JSON — keep scanning */
+		}
+		return undefined;
+	};
+	const candidates = [
+		...[...text.matchAll(/```json\s*([\s\S]*?)```/gi)].map((m) => m[1].trim()),
+		...jsonObjects(text),
+	];
+	for (const c of candidates) {
+		const p = asPlan(c);
+		if (p) return p;
+	}
+	return undefined;
+}
+
 // A harness request function bound to one child's stdio (id-correlated reply/timeout).
 type RequestFn = <T>(frame: Record<string, unknown>) => Promise<T>;
 
@@ -64,9 +142,14 @@ export default function (pi: ExtensionAPI) {
 	// registered once at factory scope, outside session_start). Cleared on teardown.
 	let harnessRequest: RequestFn | undefined;
 
-	// Council one-shot turn state: the command arms these, the before_agent_start hook
-	// consumes them for exactly one turn (ADR-0016).
-	let councilPending = false;
+	// Council interaction state (ADR-0019). councilActive is armed by /council and kept across
+	// the whole review → iterate → approve conversation: while it is set, before_agent_start runs
+	// every turn as council, so a plain "approved" turn is still council (not the default agent).
+	// It clears when council's final JSON plan is captured and submitted, or on session reset.
+	// councilProposed guards the human-review gate: the first council turn is the Markdown
+	// proposal and never auto-submits, so a plan only lands after a human approval turn.
+	let councilActive = false;
+	let councilProposed = false;
 	let councilPersona = "";
 
 	const setStatus = (ctx: ExtensionContext, text: string | undefined) => {
@@ -80,6 +163,8 @@ export default function (pi: ExtensionAPI) {
 		const c = child;
 		child = undefined;
 		harnessRequest = undefined;
+		councilActive = false;
+		councilProposed = false;
 		if (!c) return;
 		try {
 			c.stdin?.end();
@@ -245,18 +330,45 @@ export default function (pi: ExtensionAPI) {
 				notify(ctx, `harness: council resolve failed (${(err as Error).message})`, "error");
 				return;
 			}
-			// Arm the one-shot persona, then trigger the turn. before_agent_start swaps the
-			// system prompt for this turn only; the next turn reverts to the default.
+			// Open the council interaction and trigger the first turn. before_agent_start keeps
+			// every turn in the council persona until the plan is captured or the session resets.
 			councilPersona = resolved.persona;
-			councilPending = true;
+			councilActive = true;
+			councilProposed = false;
 			pi.sendUserMessage(message);
 		},
 	});
 
-	pi.on("before_agent_start", () => {
-		if (!councilPending) return undefined;
-		councilPending = false; // one-shot — only the /council turn runs as council
-		return { systemPrompt: councilPersona };
+	// While a council interaction is open, run every turn as council — the review proposal, the
+	// human's edits, and the "approved" turn that emits the final JSON all need the persona.
+	pi.on("before_agent_start", () => (councilActive ? { systemPrompt: councilPersona } : undefined));
+
+	// Council emits a human-readable plan for review, then the final JSON only after the human
+	// approves (ADR-0019). When a council interaction is active, watch each finished run for that
+	// JSON and submit it to the harness to persist. The first turn is the proposal — it never
+	// submits, so the human always reviews before a plan lands; only a later (post-approval) turn
+	// can submit. Best-effort: review/iterate turns carry no plan JSON and are skipped, and a
+	// parse/submit failure is surfaced but never disrupts the session.
+	pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+		if (!councilActive || !harnessRequest) return;
+		if (!councilProposed) {
+			councilProposed = true; // the review proposal — await a human approval turn
+			return;
+		}
+		const plan = extractPlan(lastAssistantText(event.messages));
+		if (!plan) return; // no final plan in this turn (e.g. an iterate/edit turn)
+		try {
+			const rec = await harnessRequest<PlanRecordedResp>({
+				type: "submit_plan",
+				agent: "council",
+				client: "pi",
+				plan,
+			});
+			councilActive = false; // captured the approved plan — stop watching
+			notify(ctx, `harness: plan saved (${rec.taskCount} tasks)`, "info");
+		} catch (err) {
+			notify(ctx, `harness: plan save failed (${(err as Error).message})`, "error");
+		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {

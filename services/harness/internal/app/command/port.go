@@ -17,6 +17,7 @@ type TransactionalUnitOfWork interface {
 	Events() domain.EventWriter
 	Projects() domain.ProjectWriter
 	Sessions() domain.SessionWriter
+	Plans() domain.PlanWriter
 }
 
 // UnitOfWork is a TransactionalUnitOfWork whose writers autocommit per call, and

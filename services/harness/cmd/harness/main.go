@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -301,4 +302,34 @@ func (h *handler) ResolveAgent(ctx context.Context, req pilink.ResolveAgentReq) 
 	}
 
 	return pilink.AgentResolvedResp{Name: res.Name, Persona: res.Persona, Model: res.Model}, nil
+}
+
+// SubmitPlan adapts the wire frame to the SubmitPlan command: it validates the client, decodes
+// the plan against the harness contract, attaches it to the current session, drives the
+// application handler, and maps the result back to the wire. No business logic lives here.
+func (h *handler) SubmitPlan(ctx context.Context, req pilink.SubmitPlanReq) (pilink.PlanRecordedResp, error) {
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return pilink.PlanRecordedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
+	if !h.sessionStarted {
+		return pilink.PlanRecordedResp{}, fmt.Errorf("no session to attach the plan to")
+	}
+	var plan domain.OrchestrationPlan
+	if err := json.Unmarshal(req.Plan, &plan); err != nil {
+		return pilink.PlanRecordedResp{}, fmt.Errorf("invalid plan: %w", err)
+	}
+
+	ctx = appctx.WithActor(ctx, string(client))
+	res, err := h.app.Commands.SubmitPlan.Handle(ctx, command.SubmitPlan{
+		SessionID: domain.SessionID(h.sessionID),
+		Agent:     req.Agent,
+		Plan:      plan,
+		CreatedAt: time.Now(),
+	})
+	if err != nil {
+		return pilink.PlanRecordedResp{}, err
+	}
+	h.logger.Info("plan recorded", slog.String("agent", req.Agent), slog.String("plan", string(res.PlanID)), slog.Int("tasks", res.TaskCount))
+	return pilink.PlanRecordedResp{PlanID: string(res.PlanID), TaskCount: res.TaskCount}, nil
 }

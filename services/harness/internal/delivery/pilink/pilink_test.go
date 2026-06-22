@@ -14,6 +14,7 @@ import (
 type stubHandler struct {
 	gotModels pilink.ModelsReq
 	gotAgent  pilink.ResolveAgentReq
+	gotPlan   pilink.SubmitPlanReq
 }
 
 func (s *stubHandler) Hello(_ context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
@@ -28,6 +29,11 @@ func (s *stubHandler) SyncModels(_ context.Context, req pilink.ModelsReq) (pilin
 func (s *stubHandler) ResolveAgent(_ context.Context, req pilink.ResolveAgentReq) (pilink.AgentResolvedResp, error) {
 	s.gotAgent = req
 	return pilink.AgentResolvedResp{Name: req.Agent, Persona: "weigh and plan"}, nil
+}
+
+func (s *stubHandler) SubmitPlan(_ context.Context, req pilink.SubmitPlanReq) (pilink.PlanRecordedResp, error) {
+	s.gotPlan = req
+	return pilink.PlanRecordedResp{PlanID: "plan-1", TaskCount: 7}, nil
 }
 
 // decodeLines reads NDJSON frames from out into generic maps.
@@ -108,6 +114,35 @@ func TestServeRoutesResolveAgent(t *testing.T) {
 	}
 	if h.gotAgent.Agent != "council" || h.gotAgent.Client != "pi" {
 		t.Fatalf("handler got %+v, want agent=council client=pi", h.gotAgent)
+	}
+}
+
+func TestServeRoutesSubmitPlan(t *testing.T) {
+	h := &stubHandler{}
+	in := strings.NewReader(
+		`{"type":"submit_plan","id":"p1","agent":"council","client":"pi","plan":{"intent":"implement","tasks":[{"id":"T1"}]}}` + "\n",
+	)
+	var out strings.Builder
+	if err := pilink.Serve(context.Background(), in, &out, h, nil); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	frames := decodeLines(t, out.String())
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1: %v", len(frames), frames)
+	}
+	pr := frames[0]
+	if pr["type"] != "plan_recorded" || pr["id"] != "p1" {
+		t.Fatalf("frame = %v, want plan_recorded/p1", pr)
+	}
+	if pr["planId"] != "plan-1" || pr["taskCount"] != float64(7) {
+		t.Fatalf("plan_recorded = %v, want plan-1/7", pr)
+	}
+	if h.gotPlan.Agent != "council" || h.gotPlan.Client != "pi" {
+		t.Fatalf("handler got %+v, want agent=council client=pi", h.gotPlan)
+	}
+	if len(h.gotPlan.Plan) == 0 {
+		t.Fatal("handler got empty plan payload")
 	}
 }
 

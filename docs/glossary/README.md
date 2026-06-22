@@ -40,6 +40,16 @@ The live counterpart to the declarative agent team — *work actually happening*
 - **Actor** (audit) — who caused a command (the reporting client; `""` if unknown). Carried on
   the context (`internal/app/appctx`) by the delivery layer and recorded on each Event. Distinct
   from the authorization **Principal** (the agent name).
+- **Plan** (persisted) — a council orchestration plan **after a human approved it**, captured from
+  council's turn output and stored as a relational aggregate: the request analysis (intent, goal,
+  scope, assumptions, risks), the task DAG (**plan task**s grouped into **plan wave**s via a
+  membership join), the human-approval gates, and a closing report. Attached to the session it was
+  produced in; identified by a UUID v7. A future executor (Module 2) drives it; the harness only
+  records it ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)). Type: `domain.Plan`
+  (root), `domain.PlanTask` / `domain.PlanWave` / `domain.PlanRisk` / `domain.PlanApproval`
+  (children), persisted in `plans` / `plan_tasks` / `plan_waves` / `plan_wave_tasks` / `plan_risks`
+  / `plan_approvals`. Distinct from the **Orchestration plan** contract (the wire/prompt shape it
+  is built from).
 
 ## Agent team (declarative)
 
@@ -77,10 +87,13 @@ The team definition — *who can work* — independent of any running session.
 - **Quality gate** — one rung of the four-gate human-in-the-loop model (advisory → validating →
   blocking → escalating): how much oversight a task needs before it proceeds; high-risk work blocks
   on human approval. Type: `domain.QualityGate`.
-- **Orchestration plan** — council's machine-readable output: an intent, a dimensioned analysis, and
-  a task DAG (per-task assignee+lens, expected output, dependencies, wave, definition-of-done, gate,
-  risk) a human reviews before it is driven ([ADR-0017](../adr/0017-council-orchestration-model.md)).
-  Type: `domain.OrchestrationPlan` / `domain.PlannedTask`.
+- **Orchestration plan** — council's output **contract**: an intent, a dimensioned analysis, and a
+  task DAG (per-task assignee+lens, expected output, dependencies, wave, definition-of-done, gate,
+  risk). Council presents it as Markdown for human review, then — on approval — emits it as JSON
+  matching this contract ([ADR-0017](../adr/0017-council-orchestration-model.md),
+  [ADR-0019](../adr/0019-persist-council-orchestration-plan.md)). It is the single source for both
+  the prompt schema (rendered by reflection) and the inbound decode. Type:
+  `domain.OrchestrationPlan` / `domain.PlannedTask`.
 - **Model** — a provider/model-id in the first-class catalog (e.g. `anthropic/claude-opus-4-7`,
   stored as `client` + provider + `slug`), referenced by id from a session membership. Model
   names are **client-specific**, so the natural key is `(client, provider, slug)`

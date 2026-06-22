@@ -35,10 +35,12 @@ const (
 	typePing          = "ping"           // in:  liveness probe
 	typeModels        = "models"         // in:  client reports its enabled models
 	typeResolveAgent  = "resolve_agent"  // in:  client asks the harness to resolve an agent
+	typeSubmitPlan    = "submit_plan"    // in:  client submits an approved council plan to persist
 	typeReady         = "ready"          // out: handshake accepted, harness is live
 	typePong          = "pong"           // out: reply to ping
 	typeModelsSynced  = "models_synced"  // out: catalog sync result
 	typeAgentResolved = "agent_resolved" // out: resolved agent (persona, and later model)
+	typePlanRecorded  = "plan_recorded"  // out: plan persisted (id + task count)
 	typeError         = "error"          // out: a frame could not be handled
 )
 
@@ -126,6 +128,27 @@ type AgentResolvedResp struct {
 	Model   string `json:"model,omitempty"`
 }
 
+// SubmitPlanReq is the inbound "submit_plan" frame: the client submits a council-produced
+// orchestration plan (after a human approved it) for the harness to persist. Plan is the raw
+// plan JSON, decoded against the harness's plan contract by the handler. Client is the
+// reporting client; Agent is the producing agent (council).
+type SubmitPlanReq struct {
+	Type   string          `json:"type"`
+	ID     string          `json:"id,omitempty"`
+	Agent  string          `json:"agent"`
+	Client string          `json:"client,omitempty"`
+	Plan   json.RawMessage `json:"plan"`
+}
+
+// PlanRecordedResp is the outbound reply to a "submit_plan" frame: the persisted plan's id and
+// how many tasks it holds.
+type PlanRecordedResp struct {
+	Type      string `json:"type"`
+	ID        string `json:"id,omitempty"`
+	PlanID    string `json:"planId"`
+	TaskCount int    `json:"taskCount"`
+}
+
 // errorResp is the outbound frame for an unhandled inbound frame.
 type errorResp struct {
 	Type    string `json:"type"`
@@ -144,6 +167,9 @@ type Handler interface {
 	// ResolveAgent resolves the named agent (its persona, and later its model) so the
 	// client can govern a turn as that agent.
 	ResolveAgent(ctx context.Context, req ResolveAgentReq) (AgentResolvedResp, error)
+	// SubmitPlan persists a council-produced orchestration plan the human approved, reporting
+	// the stored plan's id and task count.
+	SubmitPlan(ctx context.Context, req SubmitPlanReq) (PlanRecordedResp, error)
 }
 
 // Serve runs the NDJSON request/response loop until in reaches EOF or ctx is
@@ -250,6 +276,19 @@ func dispatch(ctx context.Context, enc *json.Encoder, h Handler, env envelope, r
 			return replyErr("%s", err.Error())
 		}
 		resp.Type = typeAgentResolved
+		resp.ID = env.ID
+		return enc.Encode(resp)
+
+	case typeSubmitPlan:
+		var req SubmitPlanReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return replyErr("invalid submit_plan: %v", err)
+		}
+		resp, err := h.SubmitPlan(ctx, req)
+		if err != nil {
+			return replyErr("%s", err.Error())
+		}
+		resp.Type = typePlanRecorded
 		resp.ID = env.ID
 		return enc.Encode(resp)
 

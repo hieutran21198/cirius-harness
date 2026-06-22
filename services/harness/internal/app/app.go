@@ -23,6 +23,7 @@ type Commands struct {
 	SyncModels     command.SyncModelsHandler
 	StartSession   command.StartSessionHandler
 	RecordAgentRun command.RecordAgentRunHandler
+	SubmitPlan     command.SubmitPlanHandler
 }
 
 // Queries groups the read-side use cases.
@@ -37,6 +38,7 @@ func New(uow command.UnitOfWork, rs query.ReadStore, logger *slog.Logger) Applic
 			SyncModels:     command.NewSyncModelsHandler(uow, logger),
 			StartSession:   command.NewStartSessionHandler(uow, logger),
 			RecordAgentRun: command.NewRecordAgentRunHandler(uow, logger),
+			SubmitPlan:     command.NewSubmitPlanHandler(uow, logger),
 		},
 		Queries: Queries{
 			ResolveAgent: query.NewResolveAgentHandler(rs, logger),

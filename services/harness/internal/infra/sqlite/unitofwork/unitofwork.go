@@ -35,6 +35,9 @@ func (u *UnitOfWork) Projects() domain.ProjectWriter { return repo.NewProjectWri
 // Sessions returns the session writer bound to this unit of work's handle.
 func (u *UnitOfWork) Sessions() domain.SessionWriter { return repo.NewSessionWriter(u.db) }
 
+// Plans returns the orchestration-plan writer bound to this unit of work's handle.
+func (u *UnitOfWork) Plans() domain.PlanWriter { return repo.NewPlanWriter(u.db) }
+
 // DoTx runs fn inside one transaction: every writer obtained from the txU shares
 // it, committing on nil and rolling back on error (or panic).
 func (u *UnitOfWork) DoTx(ctx context.Context, fn func(ctx context.Context, tx command.TransactionalUnitOfWork) error) error {

@@ -7,6 +7,8 @@
 - **Superseded by**: -
 - **Refines**: [ADR-0016](0016-harness-owned-agent-persona-governed-turn.md) (council's persona is a
   domain constant; this gives that persona an internal structure and an output contract)
+- **Refined by**: [ADR-0019](0019-persist-council-orchestration-plan.md) (the deferred plan
+  persistence below now lands; the output is reframed to Markdown-for-review then JSON-on-approval)
 
 ## Context
 

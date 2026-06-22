@@ -6,19 +6,26 @@ import (
 	"testing"
 )
 
-// TestPlanContractRendersEveryTaskField asserts the prompt's output schema lists every
-// PlannedTask json field, so the Go contract and the rendered prompt cannot drift.
-func TestPlanContractRendersEveryTaskField(t *testing.T) {
+// TestPlanContractRendersEveryField asserts the prompt's output schema lists every json field
+// of OrchestrationPlan and every nested contract struct it references, so the Go contract and
+// the rendered prompt cannot drift.
+func TestPlanContractRendersEveryField(t *testing.T) {
 	t.Parallel()
 	spec := planContractSpec()
-	for _, f := range jsonFields(reflect.TypeFor[PlannedTask]()) {
-		if !strings.Contains(spec, f) {
-			t.Fatalf("plan contract spec missing PlannedTask field %q", f)
-		}
+	types := []reflect.Type{
+		reflect.TypeFor[OrchestrationPlan](), reflect.TypeFor[Scope](), reflect.TypeFor[Risk](),
+		reflect.TypeFor[Approval](), reflect.TypeFor[Wave](), reflect.TypeFor[Report](),
+		reflect.TypeFor[PlannedTask](), reflect.TypeFor[Assignee](),
 	}
-	for _, f := range jsonFields(reflect.TypeFor[OrchestrationPlan]()) {
-		if !strings.Contains(spec, f) {
-			t.Fatalf("plan contract spec missing OrchestrationPlan field %q", f)
+	for _, ty := range types {
+		for _, f := range reflect.VisibleFields(ty) {
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "" || name == "-" {
+				name = f.Name
+			}
+			if !strings.Contains(spec, name) {
+				t.Fatalf("plan contract spec missing %s field %q", ty.Name(), name)
+			}
 		}
 	}
 }

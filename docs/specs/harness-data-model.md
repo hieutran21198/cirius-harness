@@ -83,6 +83,15 @@ attributes, and references travel by UUID id ([ADR-0005](../adr/0005-surrogate-u
   caused it, and how it ended. Standalone (no FK); distinct from the ephemeral stderr logs and
   from scribe's distilled lessons. Persisted via `domain.EventWriter`
   ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
+- `Plan` (ID, SessionID?, Agent, Intent, Goal, Status, CreatedAt, Scope, Assumptions, Report,
+  Tasks, Risks, Approvals, Waves) — a council orchestration plan **persisted after a human approved
+  it** ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)). The request analysis
+  (intent/goal) and small leaves (scope/assumptions/report as JSON) live on the `plans` row;
+  `SessionID` is a nullable FK to the producing session. Children: `PlanTask` (one DAG node —
+  ref, category, assignee agent+lens, objective, inputs/depends_on/dod as JSON, gate, risk),
+  `PlanRisk`, `PlanApproval`, and `PlanWave` whose task membership is the `plan_wave_tasks` join.
+  Built from the `OrchestrationPlan` contract and validated as a DAG (unique refs, no dangling
+  dependencies). Persisted via `domain.PlanWriter`. A future executor drives it; this records it.
 
 ### Schema (SQLite)
 
@@ -159,6 +168,56 @@ erDiagram
         TEXT     message
         TEXT     detail      "optional JSON"
     }
+    plans {
+        TEXT     id          PK
+        TEXT     session_id  FK "producing session; null if none (ON DELETE SET NULL)"
+        TEXT     agent
+        TEXT     intent
+        TEXT     goal
+        TEXT     status
+        DATETIME created_at
+        TEXT     scope       "JSON {primary, out_of_scope_by_default}"
+        TEXT     assumptions "JSON array"
+        TEXT     report      "JSON {status, summary, definition_of_done}"
+    }
+    plan_tasks {
+        TEXT id              PK
+        TEXT plan_id         FK
+        TEXT ref             "plan-local id (T1); UNIQUE per plan"
+        TEXT category
+        TEXT assignee_agent
+        TEXT assignee_lens
+        TEXT objective
+        TEXT expected_output
+        TEXT gate
+        TEXT risk_level
+        TEXT inputs          "JSON array"
+        TEXT depends_on      "JSON array of refs"
+        TEXT dod             "JSON array"
+    }
+    plan_risks {
+        TEXT id          PK
+        TEXT plan_id     FK
+        TEXT level
+        TEXT description
+    }
+    plan_approvals {
+        TEXT id              PK
+        TEXT plan_id         FK
+        TEXT type
+        TEXT required_before
+        TEXT reason
+        TEXT question
+    }
+    plan_waves {
+        TEXT    id          PK
+        TEXT    plan_id     FK
+        INTEGER wave_number "UNIQUE per plan"
+    }
+    plan_wave_tasks {
+        TEXT plan_wave_id PK,FK
+        TEXT plan_task_id PK,FK
+    }
 
     agents    ||--o{ agent_tools    : "granted"
     tools     ||--o{ agent_tools    : ""
@@ -170,10 +229,19 @@ erDiagram
     models    ||--o{ session_agents : "ran with"
     worktrees  }o..o{ sessions      : "env (polymorphic, no FK)"
     containers }o..o{ sessions      : "env (polymorphic, no FK)"
+    sessions  ||--o{ plans          : "produced in (nullable FK)"
+    plans     ||--o{ plan_tasks     : "has"
+    plans     ||--o{ plan_risks     : "has"
+    plans     ||--o{ plan_approvals : "has"
+    plans     ||--o{ plan_waves     : "has"
+    plan_waves ||--o{ plan_wave_tasks : "groups"
+    plan_tasks ||--o{ plan_wave_tasks : "member of"
 ```
 
 `models`, `agents`, `tools`, `agent_tools`, `projects`, `containers`, `worktrees`,
-`sessions`, `session_agents` — all created by one goose migration in FK order. Each aggregate
+`sessions`, `session_agents` — all created by one goose migration in FK order (the `events` table
+and the `plans` family — `plans`, `plan_tasks`, `plan_risks`, `plan_approvals`, `plan_waves`,
+`plan_wave_tasks` — are later migrations). Each aggregate
 table has an `id TEXT PRIMARY KEY NOT NULL` (UUID v7) with the natural key as `UNIQUE NOT NULL`;
 foreign keys reference the parent **id** (`agent_id`, `tool_id`, `model_id`, `project_id`,
 `session_id`) with `ON DELETE CASCADE`. `agent_tools` is a **pure junction** (composite PK
@@ -199,10 +267,12 @@ There is no production history yet, so the initial schema is a single `…_initi
 
 - GORM **driven adapters** in `internal/infra` implementing the domain `Writer`/`Reader`
   interfaces via a `UnitOfWork`/`ReadStore` ([ADR-0013](../adr/0013-idiomatic-go-layout-and-unit-of-work.md))
-  — the write side exposes `domain.ModelWriter`, `EventWriter`, `ProjectWriter`, and
-  `SessionWriter` on `command.UnitOfWork` (`infra/sqlite/unitofwork` + `infra/sqlite/repo`): the
-  harness records the audit log, the project, the session, and each agent run
-  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)). The read side has its
+  — the write side exposes `domain.ModelWriter`, `EventWriter`, `ProjectWriter`,
+  `SessionWriter`, and `PlanWriter` on `command.UnitOfWork` (`infra/sqlite/unitofwork` +
+  `infra/sqlite/repo`): the harness records the audit log, the project, the session, each agent run
+  ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)), and an approved council
+  plan across the six `plan*` tables
+  ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)). The read side has its
   first reader (`infra/sqlite/readstore` + `infra/sqlite/repo`: `query.ReadStore` +
   `domain.AgentReader`, serving `ResolveAgent`'s exists/enabled check — the persona itself is a
   `domain.Persona` constant, not read from a column

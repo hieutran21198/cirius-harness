@@ -175,7 +175,16 @@ func (c CouncilProfile) SystemPrompt() string {
 	b.WriteString("\nDefinition of done: ")
 	b.WriteString(strings.Join(c.dod, " · "))
 
-	section(&b, "OUTPUT")
+	section(&b, "OUTPUT — review first, then submit")
+	b.WriteString("\nYou remain council for the whole of this conversation — the proposal, any edits, " +
+		"and the approval all run as you. Produce the plan in TWO stages:")
+	b.WriteString("\n1. REVIEW: present the plan as a clear, human-readable Markdown document — " +
+		"intent and goal; scope (in scope / out of scope); assumptions; risks (level + description); " +
+		"a task table (ref, category, assignee[+lens], objective, depends-on, wave, gate, risk); the " +
+		"human-approval gates; and the definition of done. Do NOT emit JSON in this stage. Ask the " +
+		"human to correct or approve the plan; if they ask for changes, revise the Markdown and ask again.")
+	b.WriteString("\n2. SUBMIT: only once the human approves, emit the final plan as machine-readable JSON " +
+		"(incorporating any edits). The harness captures and persists it.")
 	b.WriteString("\n")
 	b.WriteString(planContractSpec())
 

@@ -37,6 +37,8 @@ sets and the harness echoes on the reply (so a client can correlate request↔re
 | out | `models_synced` | sync result (`added`, `total`) |
 | in  | `resolve_agent` | client asks the harness to resolve an agent (`agent`, `client`) so it can govern a turn as that agent ([ADR-0016](../adr/0016-harness-owned-agent-persona-governed-turn.md)); an unknown/missing `client` or unknown `agent` is an `error` frame |
 | out | `agent_resolved` | resolved agent (`name`, `persona`; `model` empty until the resolver milestone) |
+| in  | `submit_plan` | client submits a human-approved council plan to persist (`agent`, `client`, `plan` — the plan object matching the harness contract) ([ADR-0019](../adr/0019-persist-council-orchestration-plan.md)); an unknown/missing `client`, no active session, or an invalid plan is an `error` frame |
+| out | `plan_recorded` | plan persisted (`planId`, `taskCount`) |
 | out | `error` | a frame could not be handled (`message`) |
 
 New frames are additive (same rule as cmd output). The Go contract lives in

@@ -56,6 +56,7 @@ func (u *fakeUoW) Models() domain.ModelWriter { return u.w }
 func (u *fakeUoW) Events() domain.EventWriter     { return nil }
 func (u *fakeUoW) Projects() domain.ProjectWriter { return nil }
 func (u *fakeUoW) Sessions() domain.SessionWriter { return nil }
+func (u *fakeUoW) Plans() domain.PlanWriter       { return nil }
 
 func (u *fakeUoW) DoTx(ctx context.Context, fn func(context.Context, command.TransactionalUnitOfWork) error) error {
 	return fn(ctx, u)
