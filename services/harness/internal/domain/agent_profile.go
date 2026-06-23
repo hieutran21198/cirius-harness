@@ -73,6 +73,14 @@ func (p AgentProfile) SystemPrompt() string {
 		b.WriteString("\n")
 		b.WriteString(p.effort)
 	}
+
+	// When this agent is driven as a task worker, it closes its turn with a structured report
+	// envelope the harness validates and council consumes (ADR-0023). The contract is rendered
+	// from the Go types so the prompt cannot drift; the prose output above is the human-readable
+	// body, the JSON is the machine contract.
+	heading(&b, st, "STRUCTURED REPORT — close your turn with this", "Structured report")
+	b.WriteString("\n")
+	b.WriteString(reportContractSpec())
 	return b.String()
 }
 

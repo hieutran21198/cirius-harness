@@ -31,21 +31,25 @@ const maxLine = 1 << 20 // 1 MiB
 // Message types on the wire. Each frame is a JSON object carrying a "type" and an
 // optional "id" used by the client to correlate a reply with its request.
 const (
-	typeHello         = "hello"          // in:  client announces itself
-	typePing          = "ping"           // in:  liveness probe
-	typeModels        = "models"         // in:  client reports its enabled models
-	typeResolveAgent  = "resolve_agent"  // in:  client asks the harness to resolve an agent
-	typeSubmitPlan    = "submit_plan"    // in:  client submits an approved council plan to persist
-	typeGetPlan       = "get_plan"       // in:  client fetches a persisted plan to drive
-	typeReportRun     = "report_run"     // in:  client reports drive progress (plan/task status)
-	typeReady         = "ready"          // out: handshake accepted, harness is live
-	typePong          = "pong"           // out: reply to ping
-	typeModelsSynced  = "models_synced"  // out: catalog sync result
-	typeAgentResolved = "agent_resolved" // out: resolved agent (persona, and later model)
-	typePlanRecorded  = "plan_recorded"  // out: plan persisted (id + task count)
-	typePlanFetched   = "plan"           // out: the fetched plan (contract shape + ids + status)
-	typeRunReported   = "run_reported"   // out: drive progress recorded (run id + status)
-	typeError         = "error"          // out: a frame could not be handled
+	typeHello            = "hello"             // in:  client announces itself
+	typePing             = "ping"              // in:  liveness probe
+	typeModels           = "models"            // in:  client reports its enabled models
+	typeResolveAgent     = "resolve_agent"     // in:  client asks the harness to resolve an agent
+	typeSubmitPlan       = "submit_plan"       // in:  client submits an approved council plan to persist
+	typeGetPlan          = "get_plan"          // in:  client fetches a persisted plan to drive
+	typeReportRun        = "report_run"        // in:  client reports drive progress (plan/task status)
+	typeGetReports       = "get_reports"       // in:  client fetches a run's structured task reports
+	typeSubmitDecision   = "submit_decision"   // in: client submits council's post-execution decision
+	typeReady            = "ready"             // out: handshake accepted, harness is live
+	typePong             = "pong"              // out: reply to ping
+	typeModelsSynced     = "models_synced"     // out: catalog sync result
+	typeAgentResolved    = "agent_resolved"    // out: resolved agent (persona, and later model)
+	typePlanRecorded     = "plan_recorded"     // out: plan persisted (id + task count)
+	typePlanFetched      = "plan"              // out: the fetched plan (contract shape + ids + status)
+	typeRunReported      = "run_reported"      // out: drive progress recorded (run id + status)
+	typeReportsFetched   = "reports"           // out: the run's structured task reports
+	typeDecisionRecorded = "decision_recorded" // out: council's decision persisted (id + run id)
+	typeError            = "error"             // out: a frame could not be handled
 )
 
 // envelope is the common header decoded from every inbound frame to route it.
@@ -187,6 +191,13 @@ type ReportRunReq struct {
 		Ref     string `json:"ref"`
 		Status  string `json:"status"`
 		Summary string `json:"summary,omitempty"`
+		// Agent is the agent that produced the report (the task's assignee).
+		Agent string `json:"agent,omitempty"`
+		// Report is the worker's structured report envelope, present on a terminal task report
+		// (done/failed). Decoded against the harness's report contract by the handler.
+		Report json.RawMessage `json:"report,omitempty"`
+		// Raw is the worker's full output, kept for audit/debug alongside the envelope.
+		Raw string `json:"raw,omitempty"`
 	} `json:"task,omitempty"`
 }
 
@@ -196,6 +207,53 @@ type RunReportedResp struct {
 	ID        string `json:"id,omitempty"`
 	PlanRunID string `json:"planRunId"`
 	Status    string `json:"status"`
+}
+
+// GetReportsReq is the inbound "get_reports" frame: the client fetches a run's structured task
+// reports so council's decision stage can consume them. Client is the reporting client.
+type GetReportsReq struct {
+	Type   string `json:"type"`
+	ID     string `json:"id,omitempty"`
+	PlanID string `json:"planId"`
+	Client string `json:"client,omitempty"`
+}
+
+// ReportView is one task's normalized report on the wire: its ref, the producing agent, and the
+// validated envelope JSON (the raw output is audit-only and is not surfaced here).
+type ReportView struct {
+	Ref      string          `json:"ref"`
+	Agent    string          `json:"agent"`
+	Envelope json.RawMessage `json:"envelope"`
+}
+
+// ReportsResp is the outbound reply to a "get_reports" frame: the run's id and its task reports.
+type ReportsResp struct {
+	Type      string       `json:"type"`
+	ID        string       `json:"id,omitempty"`
+	PlanRunID string       `json:"planRunId"`
+	Reports   []ReportView `json:"reports"`
+}
+
+// SubmitDecisionReq is the inbound "submit_decision" frame: the client submits council's
+// post-execution decision over a run for the harness to persist. Decision is the raw decision
+// JSON, decoded against the harness's decision contract by the handler. Client is the reporting
+// client; Agent is the producing agent (council).
+type SubmitDecisionReq struct {
+	Type     string          `json:"type"`
+	ID       string          `json:"id,omitempty"`
+	PlanID   string          `json:"planId"`
+	Agent    string          `json:"agent,omitempty"`
+	Client   string          `json:"client,omitempty"`
+	Decision json.RawMessage `json:"decision"`
+}
+
+// DecisionRecordedResp is the outbound reply to a "submit_decision" frame: the persisted
+// decision's id and the run it belongs to.
+type DecisionRecordedResp struct {
+	Type       string `json:"type"`
+	ID         string `json:"id,omitempty"`
+	DecisionID string `json:"decisionId"`
+	PlanRunID  string `json:"planRunId"`
 }
 
 // errorResp is the outbound frame for an unhandled inbound frame.
@@ -225,6 +283,12 @@ type Handler interface {
 	// ReportRun records drive progress for a plan (plan-level status and/or a per-task update),
 	// returning the run's id and current status.
 	ReportRun(ctx context.Context, req ReportRunReq) (RunReportedResp, error)
+	// GetReports fetches a run's structured task reports so council's decision stage can consume
+	// them, returning the run's id and its normalized envelopes.
+	GetReports(ctx context.Context, req GetReportsReq) (ReportsResp, error)
+	// SubmitDecision persists council's post-execution decision over a run, returning the stored
+	// decision's id and the run it belongs to.
+	SubmitDecision(ctx context.Context, req SubmitDecisionReq) (DecisionRecordedResp, error)
 }
 
 // Serve runs the NDJSON request/response loop until in reaches EOF or ctx is
@@ -370,6 +434,32 @@ func dispatch(ctx context.Context, enc *json.Encoder, h Handler, env envelope, r
 			return replyErr("%s", err.Error())
 		}
 		resp.Type = typeRunReported
+		resp.ID = env.ID
+		return enc.Encode(resp)
+
+	case typeGetReports:
+		var req GetReportsReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return replyErr("invalid get_reports: %v", err)
+		}
+		resp, err := h.GetReports(ctx, req)
+		if err != nil {
+			return replyErr("%s", err.Error())
+		}
+		resp.Type = typeReportsFetched
+		resp.ID = env.ID
+		return enc.Encode(resp)
+
+	case typeSubmitDecision:
+		var req SubmitDecisionReq
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return replyErr("invalid submit_decision: %v", err)
+		}
+		resp, err := h.SubmitDecision(ctx, req)
+		if err != nil {
+			return replyErr("%s", err.Error())
+		}
+		resp.Type = typeDecisionRecorded
 		resp.ID = env.ID
 		return enc.Encode(resp)
 

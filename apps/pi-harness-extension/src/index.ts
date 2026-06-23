@@ -32,6 +32,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { drivePlan } from "./coordination/engine";
+import type { DecisionRecordedResp, ReportsResp } from "./coordination/types";
 
 const STATUS_KEY = "harness";
 const DRIVE_STATUS_KEY = "harness-drive";
@@ -135,6 +136,34 @@ function extractPlan(text: string): Record<string, unknown> | undefined {
 	return undefined;
 }
 
+// extractDecision pulls council's post-execution decision out of an assistant message (ADR-0023).
+// It prefers a fenced ```json block, then any balanced {…} object, and accepts the first that
+// parses to an object carrying a `verdict` string — so the Markdown turns and non-decision JSON
+// yield nothing.
+function extractDecision(text: string): Record<string, unknown> | undefined {
+	const asDecision = (s: string): Record<string, unknown> | undefined => {
+		try {
+			const v: unknown = JSON.parse(s);
+			if (v && typeof v === "object" && !Array.isArray(v)) {
+				const obj = v as Record<string, unknown>;
+				if (typeof obj.verdict === "string") return obj;
+			}
+		} catch {
+			/* not JSON — keep scanning */
+		}
+		return undefined;
+	};
+	const candidates = [
+		...[...text.matchAll(/```json\s*([\s\S]*?)```/gi)].map((m) => m[1].trim()),
+		...jsonObjects(text),
+	];
+	for (const c of candidates) {
+		const d = asDecision(c);
+		if (d) return d;
+	}
+	return undefined;
+}
+
 // A harness request function bound to one child's stdio (id-correlated reply/timeout).
 type RequestFn = <T>(frame: Record<string, unknown>) => Promise<T>;
 
@@ -162,6 +191,10 @@ export default function (pi: ExtensionAPI) {
 	let lastPlanId: string | undefined;
 	let driving = false;
 
+	// Decision state (ADR-0023). When set, the next council turn is the post-execution decision
+	// for this plan: agent_end captures the decision JSON and submits it (rather than a plan).
+	let decisionPlanId: string | undefined;
+
 	const setStatus = (ctx: ExtensionContext, text: string | undefined) => {
 		if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, text);
 	};
@@ -177,6 +210,7 @@ export default function (pi: ExtensionAPI) {
 		councilProposed = false;
 		lastPlanId = undefined;
 		driving = false;
+		decisionPlanId = undefined;
 		if (!c) return;
 		try {
 			c.stdin?.end();
@@ -362,7 +396,30 @@ export default function (pi: ExtensionAPI) {
 	// can submit. Best-effort: review/iterate turns carry no plan JSON and are skipped, and a
 	// parse/submit failure is surfaced but never disrupts the session.
 	pi.on("agent_end", async (event, ctx: ExtensionContext) => {
-		if (!councilActive || !harnessRequest) return;
+		if (!harnessRequest) return;
+		// Decision stage (ADR-0023): council has consumed the structured reports and emits its
+		// verdict. Capture the decision JSON and persist it; this turn is one-shot (no review gate).
+		if (decisionPlanId) {
+			const planId = decisionPlanId;
+			const decision = extractDecision(lastAssistantText(event.messages));
+			if (!decision) return; // not the decision turn yet (e.g. a clarifying turn)
+			decisionPlanId = undefined;
+			councilActive = false;
+			try {
+				const rec = await harnessRequest<DecisionRecordedResp>({
+					type: "submit_decision",
+					agent: "council",
+					client: "pi",
+					planId,
+					decision,
+				});
+				notify(ctx, `harness: council decision recorded (${rec.decisionId})`, "info");
+			} catch (err) {
+				notify(ctx, `harness: decision save failed (${(err as Error).message})`, "error");
+			}
+			return;
+		}
+		if (!councilActive) return;
 		if (!councilProposed) {
 			councilProposed = true; // the review proposal — await a human approval turn
 			return;
@@ -383,6 +440,51 @@ export default function (pi: ExtensionAPI) {
 			notify(ctx, `harness: plan save failed (${(err as Error).message})`, "error");
 		}
 	});
+
+	// runDecisionStage runs council's post-execution decision turn (ADR-0023): it fetches the run's
+	// normalized task reports from the harness (the source of truth — not the raw conversation),
+	// composes a decision-stage message, and runs one council turn under the council persona. The
+	// agent_end handler (decisionPlanId branch) captures the emitted decision JSON and submits it.
+	const runDecisionStage = async (ctx: ExtensionContext, planId: string): Promise<void> => {
+		if (!harnessRequest) return;
+		let fetched: ReportsResp;
+		try {
+			fetched = await harnessRequest<ReportsResp>({ type: "get_reports", client: "pi", planId });
+		} catch (err) {
+			notify(ctx, `harness: fetch reports failed (${(err as Error).message})`, "error");
+			return;
+		}
+		const reports = fetched.reports ?? [];
+		if (reports.length === 0) {
+			notify(ctx, "harness: no task reports to decide on", "info");
+			return;
+		}
+		let resolved: AgentResolvedResp;
+		try {
+			resolved = await harnessRequest<AgentResolvedResp>({
+				type: "resolve_agent",
+				agent: "council",
+				client: "pi",
+			});
+		} catch (err) {
+			notify(ctx, `harness: council resolve failed (${(err as Error).message})`, "error");
+			return;
+		}
+		const body = reports
+			.map((r) => {
+				const e = r.envelope ?? {};
+				return `## ${r.ref} (${r.agent})\nstatus: ${e.status} · dod_met: ${e.dod_met} · confidence: ${e.confidence}\n${e.summary ?? ""}`;
+			})
+			.join("\n\n");
+		councilPersona = resolved.persona;
+		councilActive = true;
+		decisionPlanId = planId;
+		pi.sendUserMessage(
+			`The plan has been driven. Here are the structured task reports — your source of truth ` +
+				`for the decision.\n\n${body}\n\nWeigh them against the plan's goal and definition of ` +
+				`done, then emit your decision as the CouncilDecision JSON.`,
+		);
+	};
 
 	// --drive-dry-run: drive the plan's loop (scheduling, gating, reporting) without spawning real
 	// workers — each task's worker echoes its prompt. Lets a human exercise the drive end to end.
@@ -409,9 +511,11 @@ export default function (pi: ExtensionAPI) {
 			}
 			const request = harnessRequest;
 			const planId = args.trim() || lastPlanId;
+			const dryRun = pi.getFlag("drive-dry-run") === true;
 			driving = true;
+			let drivenPlanId: string | undefined;
 			try {
-				await drivePlan(
+				drivenPlanId = await drivePlan(
 					{
 						exec: (command, cmdArgs, opts) => pi.exec(command, cmdArgs, opts),
 						request,
@@ -425,7 +529,7 @@ export default function (pi: ExtensionAPI) {
 						cwd: ctx.cwd,
 						piBin: "pi",
 						taskTimeoutMs: TASK_TIMEOUT_MS,
-						dryRun: pi.getFlag("drive-dry-run") === true,
+						dryRun,
 					},
 					planId,
 				);
@@ -434,6 +538,11 @@ export default function (pi: ExtensionAPI) {
 			} finally {
 				driving = false;
 				if (ctx.hasUI) ctx.ui.setStatus(DRIVE_STATUS_KEY, undefined);
+			}
+			// Once the drive is done, run council's post-execution decision turn over the structured
+			// reports (ADR-0023). Skipped for a dry run, which has no real worker output to judge.
+			if (drivenPlanId && !dryRun) {
+				await runDecisionStage(ctx, drivenPlanId);
 			}
 		},
 	});

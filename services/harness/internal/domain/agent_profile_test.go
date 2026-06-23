@@ -53,6 +53,18 @@ func TestSpecialistPersonasResolve(t *testing.T) {
 	}
 }
 
+// TestSpecialistPromptsCarryReportContract asserts every driven specialist's prompt ends with the
+// structured-report contract, so a worker is always instructed to emit the envelope council reads.
+func TestSpecialistPromptsCarryReportContract(t *testing.T) {
+	t.Parallel()
+	for name := range archetypeBySeed {
+		prompt := mustProfile(t, name).SystemPrompt()
+		if !strings.Contains(prompt, "TaskReportEnvelope") {
+			t.Fatalf("%s prompt missing the report contract", name)
+		}
+	}
+}
+
 // TestSpecialistArchetypesMatchSeed is the consistency guard: each profile's archetype field must
 // equal the archetype the agent is seeded with, so the rendered style cannot drift from the model
 // family the agent runs on.

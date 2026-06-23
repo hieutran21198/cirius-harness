@@ -37,6 +37,7 @@ func TestCouncilPromptRendersFramework(t *testing.T) {
 	for _, want := range []string{
 		"HOW YOU OPERATE", "WEIGH EVERY REQUEST", "TASK CATEGORIES", "YOUR TEAM",
 		"ASSIGNMENT", "QUALITY GATES", "OUTPUT", "EFFORT",
+		"POST-EXECUTION DECISION", "CouncilDecision",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("council prompt missing section %q", want)

@@ -193,6 +193,15 @@ func (c CouncilProfile) SystemPrompt() string {
 		b.WriteString("\n")
 		b.WriteString(c.effort)
 	}
+
+	section(&b, "POST-EXECUTION DECISION — after the drive completes")
+	b.WriteString("\nOnce the plan has been driven, you are handed the structured reports each task " +
+		"produced (the normalized result envelopes — not the raw conversation). Weigh them against " +
+		"the plan's goal and definition of done and emit your decision: an overall verdict, a verdict " +
+		"per task grounded in that task's report, whether the definition of done was met, and the next " +
+		"actions. Consume the reports as the source of truth; do not re-derive results from memory.")
+	b.WriteString("\n")
+	b.WriteString(decisionContractSpec())
 	return b.String()
 }
 

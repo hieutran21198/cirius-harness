@@ -53,8 +53,45 @@ export interface RunReportedResp {
 
 export type TaskStatus = "pending" | "running" | "done" | "failed" | "skipped";
 
-/** The outcome of running one task: where it ended up and what it produced. */
+/**
+ * TaskReportEnvelope mirrors the harness's report contract (ADR-0023): the structured result a
+ * worker emits, which the coordinator extracts and submits on the report_run frame. Kept
+ * structural (optional fields) so a partial or absent envelope never throws — the coordinator
+ * normalizes it before reporting.
+ */
+export interface TaskReportEnvelope {
+	status?: string;
+	summary?: string;
+	dod_met?: boolean;
+	confidence?: string;
+	outputs?: { kind?: string; ref?: string; description?: string }[];
+	findings?: { severity?: string; location?: string; issue?: string; suggestion?: string }[];
+	verification?: string[];
+	follow_ups?: string[];
+	open_questions?: string[];
+}
+
+/** The outcome of running one task: where it ended up, its normalized summary, and the envelope. */
 export interface TaskOutcome {
 	status: TaskStatus;
 	output: string;
+}
+
+/** One task's normalized report in a `get_reports` reply (envelope as the harness stored it). */
+export interface ReportView {
+	ref: string;
+	agent: string;
+	envelope: TaskReportEnvelope;
+}
+
+/** Reply to the `get_reports` frame. */
+export interface ReportsResp {
+	planRunId: string;
+	reports: ReportView[];
+}
+
+/** Reply to the `submit_decision` frame. */
+export interface DecisionRecordedResp {
+	decisionId: string;
+	planRunId: string;
 }

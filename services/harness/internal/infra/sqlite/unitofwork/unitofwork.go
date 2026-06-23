@@ -41,6 +41,14 @@ func (u *UnitOfWork) Plans() domain.PlanWriter { return repo.NewPlanWriter(u.db)
 // PlanRuns returns the plan-run writer (drive progress) bound to this unit of work's handle.
 func (u *UnitOfWork) PlanRuns() domain.PlanRunWriter { return repo.NewPlanRunWriter(u.db) }
 
+// TaskReports returns the task-report writer bound to this unit of work's handle.
+func (u *UnitOfWork) TaskReports() domain.TaskReportWriter { return repo.NewTaskReportWriter(u.db) }
+
+// PlanDecisions returns the council-decision writer bound to this unit of work's handle.
+func (u *UnitOfWork) PlanDecisions() domain.PlanDecisionWriter {
+	return repo.NewPlanDecisionWriter(u.db)
+}
+
 // PlanReader returns the plan reader bound to this unit of work's handle, for an
 // in-transaction read (e.g. ReportRun seeding a run from the plan's task refs).
 func (u *UnitOfWork) PlanReader() domain.PlanReader { return repo.NewPlanReader(u.db) }

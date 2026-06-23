@@ -27,12 +27,16 @@ func (r fakeAgentReader) FindByName(_ context.Context, name string) (domain.Agen
 // fakeReadStore implements query.ReadStore over the fake readers. pr is nil for tests that only
 // exercise the agent reader.
 type fakeReadStore struct {
-	ar domain.AgentReader
-	pr domain.PlanReader
+	ar  domain.AgentReader
+	pr  domain.PlanReader
+	rr  domain.PlanRunReader
+	trr domain.TaskReportReader
 }
 
-func (s fakeReadStore) Agents() domain.AgentReader { return s.ar }
-func (s fakeReadStore) Plans() domain.PlanReader   { return s.pr }
+func (s fakeReadStore) Agents() domain.AgentReader           { return s.ar }
+func (s fakeReadStore) Plans() domain.PlanReader             { return s.pr }
+func (s fakeReadStore) PlanRuns() domain.PlanRunReader       { return s.rr }
+func (s fakeReadStore) TaskReports() domain.TaskReportReader { return s.trr }
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 

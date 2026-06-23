@@ -15,6 +15,17 @@ type ReportTask struct {
 	Ref     string
 	Status  domain.TaskStatus
 	Summary string
+	// Report is the worker's structured result envelope, attached on a terminal task report
+	// (done/failed). Nil for a progress-only update (e.g. "running"). When present it is
+	// validated into a domain.TaskReport and persisted alongside the status move (ADR-0023).
+	Report *TaskReportInput
+}
+
+// TaskReportInput carries the structured envelope and the worker's raw output for a finished task.
+type TaskReportInput struct {
+	Agent    string
+	Envelope domain.TaskReportEnvelope
+	Raw      string
 }
 
 // ReportRun records drive progress for a plan (ADR-0021): an optional plan-level status move and
@@ -78,6 +89,20 @@ func (h reportRunHandler) Handle(ctx context.Context, cmd ReportRun) (ReportRunR
 		}
 		if err := tx.PlanRuns().Save(ctx, run); err != nil {
 			return err
+		}
+		// Persist the worker's structured report (envelope + raw output) keyed to this run, in the
+		// same transaction as the status move — so the report and the progress never diverge.
+		if cmd.Task != nil && cmd.Task.Report != nil {
+			report, rerr := domain.NewTaskReport(
+				run.Snapshot().ID, cmd.Task.Ref, cmd.Task.Report.Agent,
+				cmd.Task.Report.Envelope, cmd.Task.Report.Raw, cmd.Now,
+			)
+			if rerr != nil {
+				return rerr
+			}
+			if err := tx.TaskReports().Save(ctx, report); err != nil {
+				return err
+			}
 		}
 		snap := run.Snapshot()
 		res = ReportRunResult{PlanRunID: snap.ID, Status: snap.Status}

@@ -12,11 +12,13 @@ import (
 
 // stubHandler records the inbound requests and returns canned replies.
 type stubHandler struct {
-	gotModels    pilink.ModelsReq
-	gotAgent     pilink.ResolveAgentReq
-	gotPlan      pilink.SubmitPlanReq
-	gotGetPlan   pilink.GetPlanReq
-	gotReportRun pilink.ReportRunReq
+	gotModels         pilink.ModelsReq
+	gotAgent          pilink.ResolveAgentReq
+	gotPlan           pilink.SubmitPlanReq
+	gotGetPlan        pilink.GetPlanReq
+	gotReportRun      pilink.ReportRunReq
+	gotGetReports     pilink.GetReportsReq
+	gotSubmitDecision pilink.SubmitDecisionReq
 }
 
 func (s *stubHandler) Hello(_ context.Context, req pilink.HelloReq) (pilink.ReadyResp, error) {
@@ -51,6 +53,16 @@ func (s *stubHandler) GetPlan(_ context.Context, req pilink.GetPlanReq) (pilink.
 func (s *stubHandler) ReportRun(_ context.Context, req pilink.ReportRunReq) (pilink.RunReportedResp, error) {
 	s.gotReportRun = req
 	return pilink.RunReportedResp{PlanRunID: "run-1", Status: "driving"}, nil
+}
+
+func (s *stubHandler) GetReports(_ context.Context, req pilink.GetReportsReq) (pilink.ReportsResp, error) {
+	s.gotGetReports = req
+	return pilink.ReportsResp{PlanRunID: "run-1"}, nil
+}
+
+func (s *stubHandler) SubmitDecision(_ context.Context, req pilink.SubmitDecisionReq) (pilink.DecisionRecordedResp, error) {
+	s.gotSubmitDecision = req
+	return pilink.DecisionRecordedResp{DecisionID: "dec-1", PlanRunID: "run-1"}, nil
 }
 
 // decodeLines reads NDJSON frames from out into generic maps.

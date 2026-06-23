@@ -13,4 +13,6 @@ import (
 type ReadStore interface {
 	Agents() domain.AgentReader
 	Plans() domain.PlanReader
+	PlanRuns() domain.PlanRunReader
+	TaskReports() domain.TaskReportReader
 }

@@ -9,7 +9,7 @@
  * real Pi or harness — see engine.test.ts.
  */
 import { gateMessage, isBlockingGate, isEditCapable } from "./gate";
-import { parseJsonModeStdout } from "./parse";
+import { extractReport, parseJsonModeStdout } from "./parse";
 import { composeTaskPrompt, firstLine, truncate } from "./prompt";
 import { assertAcyclic, buildWaves } from "./scheduler";
 import type {
@@ -19,9 +19,35 @@ import type {
 	PlanResp,
 	RunReportedResp,
 	TaskOutcome,
+	TaskReportEnvelope,
 } from "./types";
 
 const SUMMARY_MAX = 500;
+const REPORT_STATUSES = new Set(["done", "failed", "blocked"]);
+const REPORT_CONFIDENCES = new Set(["high", "medium", "low"]);
+
+// normalizeEnvelope coerces a worker's extracted report (or its absence) into an envelope the
+// harness will accept (ADR-0023): a valid status/confidence and a non-empty summary, so a missing
+// or malformed report falls back to a minimal one and the drive never breaks on validation.
+function normalizeEnvelope(
+	extracted: TaskReportEnvelope | undefined,
+	status: "done" | "failed",
+	fallbackSummary: string,
+): TaskReportEnvelope {
+	const base: TaskReportEnvelope = extracted ?? {};
+	const summary =
+		typeof base.summary === "string" && base.summary.trim()
+			? base.summary
+			: fallbackSummary || "(no summary reported)";
+	return {
+		...base,
+		status: base.status && REPORT_STATUSES.has(base.status) ? base.status : status,
+		summary,
+		confidence:
+			base.confidence && REPORT_CONFIDENCES.has(base.confidence) ? base.confidence : "low",
+		dod_met: typeof base.dod_met === "boolean" ? base.dod_met : false,
+	};
+}
 
 /** ExecResult mirrors the Pi extension SDK's pi.exec return shape. */
 export interface ExecResult {
@@ -72,8 +98,15 @@ class Mutex {
 	}
 }
 
-/** drivePlan fetches the plan and runs it to completion, recording progress as it goes. */
-export async function drivePlan(deps: CoordinatorDeps, planId: string | undefined): Promise<void> {
+/**
+ * drivePlan fetches the plan and runs it to completion, recording progress as it goes. It returns
+ * the real plan id it drove (so the caller can run the post-execution decision stage against it),
+ * or undefined when there was nothing to drive.
+ */
+export async function drivePlan(
+	deps: CoordinatorDeps,
+	planId: string | undefined,
+): Promise<string | undefined> {
 	const fetched = await deps.request<PlanResp>({
 		type: "get_plan",
 		planId: planId ?? "",
@@ -83,7 +116,7 @@ export async function drivePlan(deps: CoordinatorDeps, planId: string | undefine
 	const tasks = plan.tasks ?? [];
 	if (tasks.length === 0) {
 		deps.notify("harness: plan has no tasks to drive", "error");
-		return;
+		return undefined;
 	}
 	assertAcyclic(tasks);
 	const realPlanId = fetched.planId;
@@ -188,17 +221,37 @@ export async function drivePlan(deps: CoordinatorDeps, planId: string | undefine
 		const result = isEditCapable(task) ? await editMutex.run(exec) : await exec();
 
 		if (result.error) {
-			outcomes.set(task.id, { status: "failed", output: "" });
+			// A failed worker rarely emits a clean envelope; synthesize one from the error so the
+			// failure is still recorded as a structured report (with its raw output for audit).
+			const envelope = normalizeEnvelope(extractReport(result.text), "failed", result.error);
+			outcomes.set(task.id, { status: "failed", output: envelope.summary ?? "" });
 			await report({
-				task: { ref: task.id, status: "failed", summary: truncate(result.error, SUMMARY_MAX) },
+				task: {
+					ref: task.id,
+					status: "failed",
+					summary: truncate(result.error, SUMMARY_MAX),
+					agent,
+					report: envelope,
+					raw: result.text,
+				},
 			});
 		} else {
-			outcomes.set(task.id, { status: "done", output: result.text });
+			// The worker self-reports a structured envelope; extract it (full stdout kept as raw for
+			// audit) and normalize so it always validates. The normalized summary threads downstream.
+			const envelope = normalizeEnvelope(
+				extractReport(result.text),
+				"done",
+				firstLine(result.text),
+			);
+			outcomes.set(task.id, { status: "done", output: envelope.summary ?? "" });
 			await report({
 				task: {
 					ref: task.id,
 					status: "done",
-					summary: truncate(firstLine(result.text), SUMMARY_MAX),
+					summary: truncate(firstLine(envelope.summary ?? ""), SUMMARY_MAX),
+					agent,
+					report: envelope,
+					raw: result.text,
 				},
 			});
 		}
@@ -215,6 +268,7 @@ export async function drivePlan(deps: CoordinatorDeps, planId: string | undefine
 	await report({ planStatus: "done" });
 	deps.progress(undefined);
 	deps.notify(`harness: drive complete — ${summarize(outcomes)}`, "info");
+	return realPlanId;
 }
 
 /** runChild spawns one headless worker and parses its result. */

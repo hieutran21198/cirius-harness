@@ -25,5 +25,11 @@ func (s *ReadStore) Agents() domain.AgentReader { return repo.NewAgentReader(s.d
 // Plans returns the plan reader bound to this store's handle.
 func (s *ReadStore) Plans() domain.PlanReader { return repo.NewPlanReader(s.db) }
 
+// PlanRuns returns the plan-run reader bound to this store's handle (resolves a plan's run id).
+func (s *ReadStore) PlanRuns() domain.PlanRunReader { return repo.NewPlanRunReader(s.db) }
+
+// TaskReports returns the task-report reader bound to this store's handle.
+func (s *ReadStore) TaskReports() domain.TaskReportReader { return repo.NewTaskReportReader(s.db) }
+
 // staticcheck: ensure ReadStore satisfies the query port.
 var _ query.ReadStore = (*ReadStore)(nil)

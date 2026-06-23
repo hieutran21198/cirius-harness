@@ -53,13 +53,15 @@ func (u *fakeUoW) Models() domain.ModelWriter { return u.w }
 
 // The audit/session writers are unused by the model-sync tests; a nil Events writer
 // makes ApplyCommandDecorators skip the audit layer.
-func (u *fakeUoW) Events() domain.EventWriter          { return nil }
-func (u *fakeUoW) Projects() domain.ProjectWriter      { return nil }
-func (u *fakeUoW) Sessions() domain.SessionWriter      { return nil }
-func (u *fakeUoW) Plans() domain.PlanWriter            { return nil }
-func (u *fakeUoW) PlanRuns() domain.PlanRunWriter      { return nil }
-func (u *fakeUoW) PlanReader() domain.PlanReader       { return nil }
-func (u *fakeUoW) PlanRunReader() domain.PlanRunReader { return nil }
+func (u *fakeUoW) Events() domain.EventWriter               { return nil }
+func (u *fakeUoW) Projects() domain.ProjectWriter           { return nil }
+func (u *fakeUoW) Sessions() domain.SessionWriter           { return nil }
+func (u *fakeUoW) Plans() domain.PlanWriter                 { return nil }
+func (u *fakeUoW) PlanRuns() domain.PlanRunWriter           { return nil }
+func (u *fakeUoW) TaskReports() domain.TaskReportWriter     { return nil }
+func (u *fakeUoW) PlanDecisions() domain.PlanDecisionWriter { return nil }
+func (u *fakeUoW) PlanReader() domain.PlanReader            { return nil }
+func (u *fakeUoW) PlanRunReader() domain.PlanRunReader      { return nil }
 
 func (u *fakeUoW) DoTx(ctx context.Context, fn func(context.Context, command.TransactionalUnitOfWork) error) error {
 	return fn(ctx, u)

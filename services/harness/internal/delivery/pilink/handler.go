@@ -212,6 +212,15 @@ func (h *handler) ReportRun(ctx context.Context, req ReportRunReq) (RunReportedR
 			return RunReportedResp{}, fmt.Errorf("unknown task status %q", req.Task.Status)
 		}
 		cmd.Task = &command.ReportTask{Ref: req.Task.Ref, Status: ts, Summary: req.Task.Summary}
+		// A terminal report carries the structured envelope and raw output; decode it against the
+		// report contract and attach it so the command persists it alongside the status move.
+		if len(req.Task.Report) > 0 {
+			var env domain.TaskReportEnvelope
+			if err := json.Unmarshal(req.Task.Report, &env); err != nil {
+				return RunReportedResp{}, fmt.Errorf("invalid report: %w", err)
+			}
+			cmd.Task.Report = &command.TaskReportInput{Agent: req.Task.Agent, Envelope: env, Raw: req.Task.Raw}
+		}
 	}
 	ctx = appctx.WithActor(ctx, string(client))
 	res, err := h.app.Commands.ReportRun.Handle(ctx, cmd)
@@ -220,4 +229,59 @@ func (h *handler) ReportRun(ctx context.Context, req ReportRunReq) (RunReportedR
 	}
 	h.logger.Info("run reported", slog.String("plan", req.PlanID), slog.String("status", string(res.Status)))
 	return RunReportedResp{PlanRunID: string(res.PlanRunID), Status: string(res.Status)}, nil
+}
+
+// GetReports adapts the wire frame to the GetReports query: it validates the client, fetches the
+// run's normalized task reports, and maps each envelope back to the wire as raw JSON. No business
+// logic lives here.
+func (h *handler) GetReports(ctx context.Context, req GetReportsReq) (ReportsResp, error) {
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return ReportsResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
+	if req.PlanID == "" {
+		return ReportsResp{}, fmt.Errorf("planId is required")
+	}
+	res, err := h.app.Queries.GetReports.Handle(ctx, query.GetReports{PlanID: domain.PlanID(req.PlanID)})
+	if err != nil {
+		return ReportsResp{}, err
+	}
+	views := make([]ReportView, len(res.Reports))
+	for i, r := range res.Reports {
+		envelope, merr := json.Marshal(r.Envelope)
+		if merr != nil {
+			return ReportsResp{}, fmt.Errorf("marshal envelope: %w", merr)
+		}
+		views[i] = ReportView{Ref: r.TaskRef, Agent: r.Agent, Envelope: envelope}
+	}
+	h.logger.Info("reports fetched", slog.String("plan", req.PlanID), slog.Int("reports", len(views)))
+	return ReportsResp{PlanRunID: string(res.PlanRunID), Reports: views}, nil
+}
+
+// SubmitDecision adapts the wire frame to the SubmitDecision command: it validates the client,
+// decodes the decision against the harness contract, drives the application handler, and maps the
+// result back to the wire. No business logic lives here.
+func (h *handler) SubmitDecision(ctx context.Context, req SubmitDecisionReq) (DecisionRecordedResp, error) {
+	client := domain.ClientKind(req.Client)
+	if !client.Valid() {
+		return DecisionRecordedResp{}, fmt.Errorf("unknown or missing client %q", req.Client)
+	}
+	if req.PlanID == "" {
+		return DecisionRecordedResp{}, fmt.Errorf("planId is required")
+	}
+	var decision domain.CouncilDecision
+	if err := json.Unmarshal(req.Decision, &decision); err != nil {
+		return DecisionRecordedResp{}, fmt.Errorf("invalid decision: %w", err)
+	}
+	ctx = appctx.WithActor(ctx, string(client))
+	res, err := h.app.Commands.SubmitDecision.Handle(ctx, command.SubmitDecision{
+		PlanID:   domain.PlanID(req.PlanID),
+		Decision: decision,
+		Now:      time.Now(),
+	})
+	if err != nil {
+		return DecisionRecordedResp{}, err
+	}
+	h.logger.Info("decision recorded", slog.String("plan", req.PlanID), slog.String("decision", string(res.DecisionID)))
+	return DecisionRecordedResp{DecisionID: string(res.DecisionID), PlanRunID: string(res.PlanRunID)}, nil
 }

@@ -25,12 +25,14 @@ type Commands struct {
 	RecordAgentRun command.RecordAgentRunHandler
 	SubmitPlan     command.SubmitPlanHandler
 	ReportRun      command.ReportRunHandler
+	SubmitDecision command.SubmitDecisionHandler
 }
 
 // Queries groups the read-side use cases.
 type Queries struct {
 	ResolveAgent query.ResolveAgentHandler
 	GetPlan      query.GetPlanHandler
+	GetReports   query.GetReportsHandler
 }
 
 // New wires the application's handlers over the given driven ports.
@@ -42,10 +44,12 @@ func New(uow command.UnitOfWork, rs query.ReadStore, logger *slog.Logger) Applic
 			RecordAgentRun: command.NewRecordAgentRunHandler(uow, logger),
 			SubmitPlan:     command.NewSubmitPlanHandler(uow, logger),
 			ReportRun:      command.NewReportRunHandler(uow, logger),
+			SubmitDecision: command.NewSubmitDecisionHandler(uow, logger),
 		},
 		Queries: Queries{
 			ResolveAgent: query.NewResolveAgentHandler(rs, logger),
 			GetPlan:      query.NewGetPlanHandler(rs, logger),
+			GetReports:   query.NewGetReportsHandler(rs, logger),
 		},
 	}
 }

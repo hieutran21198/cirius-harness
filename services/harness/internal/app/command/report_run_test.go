@@ -40,20 +40,36 @@ func (s *fakeRunStore) Save(_ context.Context, r domain.PlanRun) error {
 	return nil
 }
 
-// runUoW is a unit of work wired with the plan reader and run store the ReportRun handler needs.
-type runUoW struct {
-	plans domain.PlanReader
-	runs  *fakeRunStore
+// fakeReportStore is an in-memory domain.TaskReportWriter capturing every saved report.
+type fakeReportStore struct{ saved []domain.TaskReport }
+
+func (s *fakeReportStore) Save(_ context.Context, r domain.TaskReport) error {
+	s.saved = append(s.saved, r)
+	return nil
 }
 
-func (u *runUoW) Models() domain.ModelWriter          { return nil }
-func (u *runUoW) Events() domain.EventWriter          { return nil }
-func (u *runUoW) Projects() domain.ProjectWriter      { return nil }
-func (u *runUoW) Sessions() domain.SessionWriter      { return nil }
-func (u *runUoW) Plans() domain.PlanWriter            { return nil }
-func (u *runUoW) PlanRuns() domain.PlanRunWriter      { return u.runs }
-func (u *runUoW) PlanReader() domain.PlanReader       { return u.plans }
-func (u *runUoW) PlanRunReader() domain.PlanRunReader { return u.runs }
+// runUoW is a unit of work wired with the plan reader and run store the ReportRun handler needs.
+type runUoW struct {
+	plans   domain.PlanReader
+	runs    *fakeRunStore
+	reports *fakeReportStore
+}
+
+func (u *runUoW) Models() domain.ModelWriter     { return nil }
+func (u *runUoW) Events() domain.EventWriter     { return nil }
+func (u *runUoW) Projects() domain.ProjectWriter { return nil }
+func (u *runUoW) Sessions() domain.SessionWriter { return nil }
+func (u *runUoW) Plans() domain.PlanWriter       { return nil }
+func (u *runUoW) PlanRuns() domain.PlanRunWriter { return u.runs }
+func (u *runUoW) TaskReports() domain.TaskReportWriter {
+	if u.reports == nil {
+		return nil
+	}
+	return u.reports
+}
+func (u *runUoW) PlanDecisions() domain.PlanDecisionWriter { return nil }
+func (u *runUoW) PlanReader() domain.PlanReader            { return u.plans }
+func (u *runUoW) PlanRunReader() domain.PlanRunReader      { return u.runs }
 func (u *runUoW) DoTx(ctx context.Context, fn func(context.Context, command.TransactionalUnitOfWork) error) error {
 	return fn(ctx, u)
 }
@@ -116,6 +132,38 @@ func TestReportRunCreatesThenUpdates(t *testing.T) {
 	}
 	if uow.runs.run.Status() != domain.PlanDone {
 		t.Fatalf("run status = %q, want done", uow.runs.run.Status())
+	}
+}
+
+func TestReportRunStoresTaskReport(t *testing.T) {
+	reports := &fakeReportStore{}
+	uow := &runUoW{plans: fakePlanByID{plan: twoTaskPlan(t)}, runs: &fakeRunStore{}, reports: reports}
+	h := command.NewReportRunHandler(uow, discardLogger())
+	ctx := context.Background()
+	now := time.Now()
+
+	if _, err := h.Handle(ctx, command.ReportRun{PlanID: "plan-1", Task: &command.ReportTask{Ref: "T1", Status: domain.TaskRunning}, Now: now}); err != nil {
+		t.Fatalf("running: %v", err)
+	}
+	// A terminal report carries the structured envelope; it is persisted alongside the status move.
+	env := domain.TaskReportEnvelope{Status: "done", Summary: "scanned the tree", Confidence: "high"}
+	if _, err := h.Handle(ctx, command.ReportRun{
+		PlanID: "plan-1",
+		Task: &command.ReportTask{Ref: "T1", Status: domain.TaskDone, Summary: "scanned",
+			Report: &command.TaskReportInput{Agent: "explorer", Envelope: env, Raw: "full raw output"}},
+		Now: now,
+	}); err != nil {
+		t.Fatalf("done with report: %v", err)
+	}
+	if len(reports.saved) != 1 {
+		t.Fatalf("saved %d reports, want 1", len(reports.saved))
+	}
+	snap := reports.saved[0].Snapshot()
+	if snap.TaskRef != "T1" || snap.Agent != "explorer" || snap.Envelope.Summary != "scanned the tree" || snap.Raw != "full raw output" {
+		t.Fatalf("report = %+v, want T1/explorer envelope+raw", snap)
+	}
+	if snap.PlanRunID == "" {
+		t.Fatal("report not keyed to the run")
 	}
 }
 

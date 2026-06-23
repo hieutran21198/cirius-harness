@@ -21,6 +21,8 @@ type TransactionalUnitOfWork interface {
 	Sessions() domain.SessionWriter
 	Plans() domain.PlanWriter
 	PlanRuns() domain.PlanRunWriter
+	TaskReports() domain.TaskReportWriter
+	PlanDecisions() domain.PlanDecisionWriter
 	PlanReader() domain.PlanReader
 	PlanRunReader() domain.PlanRunReader
 }

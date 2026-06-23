@@ -43,8 +43,12 @@ sets and the harness echoes on the reply (so a client can correlate request↔re
 | out | `plan_recorded` | plan persisted (`planId`, `taskCount`) |
 | in  | `get_plan` | client fetches a persisted plan to drive (`client`; `planId` optional — empty fetches the session's latest) ([ADR-0021](../adr/0021-drive-the-council-plan.md)); an unknown/missing `client` or no plan is an `error` frame |
 | out | `plan` | the fetched plan (`planId`, `status`, `plan` — the OrchestrationPlan contract, `taskIds` — ref→task-id) |
-| in  | `report_run` | client records drive progress (`client`, `planId`, optional `planStatus`, optional `task: {ref, status, summary}`) ([ADR-0021](../adr/0021-drive-the-council-plan.md)); an unknown status or illegal transition is an `error` frame |
+| in  | `report_run` | client records drive progress (`client`, `planId`, optional `planStatus`, optional `task: {ref, status, summary}`); a terminal task may also carry `task: {agent, report, raw}` — the worker's structured report envelope + raw output, stored as a `task_report` ([ADR-0021](../adr/0021-drive-the-council-plan.md), [ADR-0023](../adr/0023-structured-task-reports-and-council-decision.md)); an unknown status, illegal transition, or invalid report is an `error` frame |
 | out | `run_reported` | drive progress recorded (`planRunId`, `status`) |
+| in  | `get_reports` | client fetches a run's structured task reports for council's decision stage (`client`, `planId`) ([ADR-0023](../adr/0023-structured-task-reports-and-council-decision.md)); an unknown/missing `client` or `planId` is an `error` frame |
+| out | `reports` | the run's task reports (`planRunId`, `reports: [{ref, agent, envelope}]`) |
+| in  | `submit_decision` | client submits council's post-execution decision to persist (`agent`, `client`, `planId`, `decision` — matching the harness contract) ([ADR-0023](../adr/0023-structured-task-reports-and-council-decision.md)); an unknown/missing `client`/`planId`, no run, or an invalid decision is an `error` frame |
+| out | `decision_recorded` | decision persisted (`decisionId`, `planRunId`) |
 | out | `error` | a frame could not be handled (`message`) |
 
 New frames are additive (same rule as cmd output). The Go contract lives in
