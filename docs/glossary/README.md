@@ -34,8 +34,9 @@ The live counterpart to the declarative agent team — *work actually happening*
   ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
 - **Audit log** — the append-only record of what the harness did: one **Event** per command
   (kind, actor, ok/error status, message), written through a command audit decorator. Persisted
-  in the `events` table; distinct from the **ephemeral stderr/file logs** and from scribe's
-  distilled lessons. Type: `domain.Event`
+  in the `events` table; distinct from the **per-session file logs**
+  ([ADR-0022](../adr/0022-harness-logs-to-per-session-file.md)) and from scribe's distilled
+  lessons. Type: `domain.Event`
   ([ADR-0018](../adr/0018-harness-observability-logging-audit-session.md)).
 - **Actor** (audit) — who caused a command (the reporting client; `""` if unknown). Carried on
   the context (`internal/app/appctx`) by the delivery layer and recorded on each Event. Distinct

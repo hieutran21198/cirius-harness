@@ -20,8 +20,8 @@
 # differ in kind (scalar vs map) the overlay wins wholesale. An unknown client key is an error.
 version: 1
 
-# Logging — override the system default (info). Per-session logs are written to
-# .cirius-harness/state/logging/<session_id>.log.
+# Logging — override the system default (info). Logs go to the per-session file
+# .cirius-harness/state/logging/<session_id>.log, not the console (ADR-0022).
 # logging:
 #   level: debug # debug | info | warn | error
 

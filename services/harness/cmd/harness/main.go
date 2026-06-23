@@ -7,7 +7,7 @@
 //
 //	harness serve [db-path]   speak the Pi stdio (NDJSON) protocol on stdin/stdout
 //
-// stdout is the protocol channel; all logs go to stderr.
+// stdout is the protocol channel; logs go to a per-session file (see newLogger).
 package main
 
 import (
@@ -90,7 +90,7 @@ func serve(dbPath string) error {
 		return err
 	}
 
-	logger, logPath, closeLog, err := newLogger(stateDir, sessionID, level)
+	logger, logPath, closeLog, err := newLogger(os.Stderr, stateDir, sessionID, level)
 	if err != nil {
 		return err
 	}
@@ -160,15 +160,17 @@ func resolveLogLevel(configLevel string) (slog.Level, error) {
 	return slogx.ParseLevel(name)
 }
 
-// newLogger builds the per-session serve logger. Logs always go to stderr and, by
-// default, ALSO to a per-session file at <stateDir>/logging/<sessionID>.log so they
-// are discoverable however the harness is launched — the Pi extension forwards the
-// child's stderr to its own console, where it is hard to inspect, but the file
-// survives. HARNESS_LOG_FILE overrides the path; "-" disables the file (stderr only).
-// HARNESS_LOG_FORMAT selects text (default) or json. Every line is tagged with the
-// session id. It returns the resolved log path ("" when disabled) and a closer for the
-// file sink. Logs never touch stdout — that is the protocol channel.
-func newLogger(stateDir, sessionID string, level slog.Level) (*slog.Logger, string, func(), error) {
+// newLogger builds the per-session serve logger. Logs go to a per-session file at
+// <stateDir>/logging/<sessionID>.log — NOT to the console: an AI client launches the
+// harness as a child and relays its stderr into the client's own TUI (the Pi extension
+// forwards it to console.error), so teeing logs to stderr would mix log records into the
+// client's UI. The console writer is used only as the fallback when the file is disabled.
+// HARNESS_LOG_FILE overrides the path; "-" disables the file and logs to the console
+// instead (the escape hatch for "I want console logs"). HARNESS_LOG_FORMAT selects text
+// (default) or json. Every line is tagged with the session id. It returns the resolved
+// log path ("" when the file is disabled) and a closer for the file sink. Logs never
+// touch stdout — that is the protocol channel.
+func newLogger(console io.Writer, stateDir, sessionID string, level slog.Level) (*slog.Logger, string, func(), error) {
 	format := slogx.FormatText
 	if strings.EqualFold(os.Getenv("HARNESS_LOG_FORMAT"), "json") {
 		format = slogx.FormatJSON
@@ -179,7 +181,7 @@ func newLogger(stateDir, sessionID string, level slog.Level) (*slog.Logger, stri
 		logPath = v // explicit override; "-" disables the file
 	}
 
-	var w io.Writer = os.Stderr
+	w := console
 	closeLog := func() {}
 	if logPath != "" && logPath != "-" {
 		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
@@ -189,10 +191,10 @@ func newLogger(stateDir, sessionID string, level slog.Level) (*slog.Logger, stri
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("open log file %q: %w", logPath, err)
 		}
-		w = io.MultiWriter(os.Stderr, f)
+		w = f // file only — never tee to the console, where it would land in the client's UI
 		closeLog = func() { _ = f.Close() }
 	} else {
-		logPath = "" // stderr only
+		logPath = "" // console only (file disabled)
 	}
 	logger := slogx.New(w, level, format).With(slog.String("session", sessionID))
 	return logger, logPath, closeLog, nil

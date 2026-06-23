@@ -20,7 +20,9 @@
 version: 1
 
 # Logging — the system default. Override the level in the user overlay (config.yaml).
-# Per-session logs are written to .cirius-harness/state/logging/<session_id>.log.
+# Logs go to the per-session file .cirius-harness/state/logging/<session_id>.log, NOT the
+# console (so they don't mix into the client's UI). HARNESS_LOG_FILE="-" logs to the console
+# instead (ADR-0022).
 logging:
   level: info # debug | info | warn | error
 
